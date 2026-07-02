@@ -37,7 +37,7 @@ During `holt init` you:
 1. **Trust the folder.**
 2. **Choose brains** (claude, codex, gemini). Holt installs any you pick that are missing.
 3. **Sign in.** For a newly installed brain, Holt starts that tool's own login (browser or its own prompt). Holt never stores your credentials.
-4. **Pick a default** brain and, optionally, a **launch command** (a short word like `ai` that runs `holt chat`).
+4. **Pick a default** brain and, optionally, a **launch command**: a short word like `ai` that starts `holt chat`. Holt installs it as a tiny launcher next to its own binary, so it works immediately in the same terminal, no sourcing or restart needed.
 5. **Enable semantic memory.** If you say yes, Holt sets up a local [Ollama](https://ollama.com) with a small embed model so recall works by meaning, fully offline.
 
 ## Using it

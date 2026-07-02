@@ -157,9 +157,10 @@ export async function runSettings(ask: Ask): Promise<HoltConfig> {
     } else if (choice === 'a') {
       const name = ((await ask('  launch command (blank to reset to holt): ')) ?? '').trim();
       if (name && name !== 'holt') {
-        if (isInstalled(name)) console.log(c.dim(`  note: "${name}" already exists; the alias will shadow it in new shells.`));
         const r = installAlias(name);
-        console.log(r.ok ? c.green(`  alias "${name}" -> holt chat added to ${r.file} (run: source ${r.file})`) : c.red('  ' + r.message));
+        if (r.ok && r.immediate) console.log(c.green(`  "${name}" is ready to use right now.`));
+        else if (r.ok) console.log(c.green(`  alias "${name}" added to ${r.file}. Run: source ${r.file} (new terminals will not need it).`));
+        else console.log(c.red('  ' + r.message));
       } else {
         removeAlias();
         console.log(c.dim('  reset to holt.'));
