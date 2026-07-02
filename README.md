@@ -6,53 +6,66 @@ Holt is an open-source, self-hosted personal agent OS. Clone it, pick your skill
 
 > A *holt* is a small wood: a sheltered place where things are kept and grow. That's the idea. A private home for your knowledge that compounds over time.
 
-> 🚧 **Status: early development (Phase 0).** The architecture and roadmap are locked and the CLI skeleton is here, but Holt is not yet functional end-to-end. Star or watch to follow along. Contributions welcome.
+> **Status: early but usable.** `holt init` and `holt chat` work today. Right now a "brain" is an agent CLI you already have (Claude Code, Codex, or Gemini), and you can switch between them mid-conversation without losing context. Memory, skills, and the knowledge graph are the next phases.
 
 ---
-
-## Why Holt
-
-- 🧠 **Memory you can see.** Persistent RAG memory plus a *navigable knowledge graph* of everything you feed it. No black-box profile you have to trust.
-- 🔌 **Any LLM.** Claude, OpenAI, Gemini, or a local model. Swap your brain with one line of config. No vendor lock-in.
-- 💸 **Local executes, cloud reviews.** Run a local model for the work and let a premium cloud model review only the risky, irreversible steps. Cheap and private by design.
-- 🧩 **MCP plugin pantry.** Skills, channels, providers, embeddings: everything is a plugin speaking the [Model Context Protocol](https://modelcontextprotocol.io). Extend it in any language.
-- 📚 **Standard skills.** Compatible with the [agentskills.io](https://agentskills.io) skill format. Pull from the community catalog or publish your own.
-- 🖥️ **CLI-first.** Works in your terminal the moment you clone. Telegram and other channels are opt-in.
 
 ## Quickstart
 
 ```bash
-npm install -g @holt-os/holt   # or: pnpm add -g @holt-os/holt
-holt init                      # pick your brain + memory (local or cloud)
-holt chat                      # start talking
+npm install -g @holt-os/holt
+holt init      # finds your agent CLIs, pick a brain, set a launch command
+holt chat      # start talking (or use your custom command, e.g. `ai`)
 ```
 
-Add skills:
+`holt init` looks for the agent CLIs on your machine (`claude`, `codex`, `gemini`), lets you pick a default, and optionally sets a short launch word so you can start Holt by typing something like `ai` instead of `holt chat`.
 
-```bash
-holt skill search finance
-holt skill add deep-research
+## Using it
+
+Inside `holt chat`:
+
 ```
+/brain            list your brains and see which is active
+/brain gemini     switch brain. your conversation context is kept
+/setting          configure brains and your launch command
+/clear            forget the conversation so far
+/help             show commands
+/exit             leave
+```
+
+The point of `/brain`: Holt owns the transcript, so you can start a thread on one model and hand it to another mid-conversation. The new brain picks up with the full context.
+
+## Brains
+
+In this phase a brain is an agent CLI already installed and logged in on your machine. No API keys to paste.
+
+| Brain | Command | Get it |
+|-------|---------|--------|
+| Claude Code | `claude` | Anthropic |
+| Codex | `codex` | OpenAI |
+| Gemini CLI | `gemini` | Google |
+
+Install at least one, then run `holt init`. Raw API providers are planned for a later phase.
 
 ## Configuration
 
-Copy `config.example.yml` to `config.yml` and edit. See the file for the full schema: brain/provider, memory and embeddings, output format (HTML or Markdown), orchestration, and channels.
+`holt init` writes `~/.holt/config.json` (your default brain, detected brains, and launch command). Edit it with `holt setting` or by hand.
 
 ## Architecture
 
-Small strongly-typed **TypeScript core** (agent loop, brain router, memory orchestration, risky-action review gate, plugin dispatcher). *Everything else* is an MCP plugin: providers, embeddings, skills, channels. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+Small strongly-typed **TypeScript core** (command dispatch, brain router, transcript, and a plugin dispatcher coming with skills). Brains and, soon, skills and channels are adapters. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Roadmap
 
 Built in always-shippable phases toward a full-vision v1:
 
-0. **Skeleton**: core loop + CLI *(in progress)*
-1. **Memory**: sqlite-vec RAG + embeddings
-2. **Any-LLM**: provider plugins + output toggle
-3. **Skills**: agentskills.io catalog + installer
-4. **Knowledge graph**: navigable memory view
-5. **Orchestration**: local-executes / cloud-reviews
-6. **Channels + polish**: Telegram, docs, one-command install
+0. **Skeleton and chat**: init, chat, brain switching with kept context *(shipped)*
+1. **Memory**: sqlite-vec store, local or cloud embeddings, recall across sessions
+2. **Any LLM directly**: raw provider brains and an HTML or Markdown output toggle
+3. **Skills**: install, search, and publish in the agentskills.io format
+4. **Knowledge graph**: a view where you can see and navigate your own memory
+5. **Orchestration**: a local model works, a cloud model reviews the risky steps
+6. **Channels and polish**: Telegram, docs, one-command setup
 
 ## Contributing
 

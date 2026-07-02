@@ -1,5 +1,7 @@
-# Holt configuration. Copy to config.yml and edit.
-# config.yml is git-ignored; never commit secrets or personal memory.
+# Planned full configuration schema (later phases). Preview only.
+# Phase 0 does NOT read this file: run `holt init`, which writes
+# ~/.holt/config.json (your brains, default brain, and launch command).
+# Never commit real secrets or personal memory.
 
 # ── Brain ────────────────────────────────────────────────────────────────
 # The LLM that runs the agent. Provider-agnostic: swap freely.

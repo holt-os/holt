@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /**
  * Holt: an open-source personal agent OS.
- * Phase 0: CLI skeleton. Commands are stubbed until the core lands.
+ * Phase 0: init, chat (with in-conversation brain switching), and settings.
  */
+import { init } from './commands/init';
+import { chat } from './commands/chat';
+import { setting } from './commands/setting';
 
-const VERSION = "0.0.1";
+const VERSION = '0.1.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -17,49 +20,45 @@ const BANNER = `
 `;
 
 const HELP = `${BANNER}
-Usage: holt <command> [options]
+Usage: holt <command>
 
 Commands:
-  init            Set up your brain (LLM) and memory (local or cloud)
-  chat            Start an interactive session
-  skill <cmd>     Manage skills: search | add | remove | list | publish
+  init            Detect your agent CLIs, pick a brain, set a launch command
+  chat            Start a session. Switch brains mid-chat with /brain, context is kept
+  setting         Configure brains and your launch command
   version         Print the Holt version
   help            Show this help
 
+Brains are the agent CLIs on your machine: claude (Claude Code), codex, gemini.
+
 Docs: https://productsdecoded.com/holt
 Repo: https://github.com/holt-os/holt
-
-Holt is in early development (Phase 0). Most commands are not wired up yet.
 `;
 
-function notReady(cmd: string): void {
-  console.log(`\n  "${cmd}" is not implemented yet. Holt is in Phase 0 (skeleton).`);
-  console.log("  Follow progress: https://github.com/holt-os/holt\n");
-}
-
-function main(argv: string[]): void {
-  const [cmd, ...rest] = argv;
-
+async function main(): Promise<void> {
+  const cmd = process.argv[2];
   switch (cmd) {
     case undefined:
-    case "help":
-    case "-h":
-    case "--help":
+    case 'help':
+    case '-h':
+    case '--help':
       console.log(HELP);
       break;
-
-    case "version":
-    case "-v":
-    case "--version":
+    case 'version':
+    case '-v':
+    case '--version':
       console.log(`holt ${VERSION}`);
       break;
-
-    case "init":
-    case "chat":
-    case "skill":
-      notReady([cmd, ...rest].join(" "));
+    case 'init':
+      await init();
       break;
-
+    case 'chat':
+      await chat();
+      break;
+    case 'setting':
+    case 'settings':
+      await setting();
+      break;
     default:
       console.log(`\n  Unknown command: "${cmd}"`);
       console.log(`  Run "holt help" for usage.\n`);
@@ -67,4 +66,4 @@ function main(argv: string[]): void {
   }
 }
 
-main(process.argv.slice(2));
+main();
