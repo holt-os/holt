@@ -10,7 +10,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "defaultBrain": "claude",
   "brains": {
     "claude": {
@@ -38,8 +38,8 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 }
 ```
 
-- `version` (number): config schema version. Currently `2`. Holt fills in missing brain entries from defaults when it loads an older file.
-- `defaultBrain` (`"claude"` | `"codex"` | `"gemini"` | `null`): the brain a new `holt chat` starts with. `null` means no brain is ready.
+- `version` (number): config schema version. Currently `3`. Holt fills in missing fields from defaults when it loads an older file.
+- `defaultBrain` (string | `null`): the brain a new `holt chat` starts with: a CLI brain id (`claude`/`codex`/`gemini`) or the short name of an API brain. `null` means no brain is ready.
 - `brains` (map): one entry per known brain.
   - `id`: the brain key, same as the map key.
   - `label`: display name shown in the UI.
@@ -47,7 +47,14 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
   - `args`: the non-interactive flags passed before the prompt. Holt invokes `command args... "<prompt>"` once per turn.
   - `enabled`: whether this brain is selectable in this folder. Set true only when the command is installed.
 
+- `apiBrains` (array): direct provider connections added via `holt setting` or `holt init`. Each entry: `id` (your short name), `provider` (`anthropic` | `openai` | `gemini`), `model` (free text), optional `keyEnv` (name of an env var holding the key). Key resolution order: `keyEnv`, then `~/.holt/credentials.json`, then the provider standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`).
+- `outputFormat` (`"markdown"` | `"html"`): how `/save` writes replies. Toggle in chat with `/output`.
+
 To point a brain at a different CLI or add flags, edit `command` / `args`. See the echo-brain trick in `CONTRIBUTING.md` for a testing use of this.
+
+## Stored API keys: `~/.holt/credentials.json`
+
+Written only when you paste a raw key while connecting an API brain. One optional key per provider (`anthropic`, `openai`, `gemini`), file mode `600`. Prefer env vars if you rotate keys often; delete the file to forget every stored key.
 
 ## Global trust list: `~/.holt/trust.json`
 

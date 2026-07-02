@@ -4,6 +4,7 @@ import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { saveReply } from '../output';
+import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills';
 import { runSettings } from './setting';
 import { init } from './init';
 import { ensureTrusted } from '../workspace';
@@ -14,6 +15,7 @@ function help(): void {
     '  commands:',
     '    /brain [name]     switch brain (CLI or API). context is kept.',
     '    /memory [query]   memory stats, or preview what a query would recall',
+    '    /skill [name] [input]  run a skill, or list them. "holt skill" manages them.',
     '    /output [fmt]     show or set output format: markdown | html',
     '    /save [name]      save the last reply to a file in this folder',
     '    /setting          configure brains, API brains, and your launch command',
@@ -84,7 +86,15 @@ export async function chat(): Promise<void> {
     const line = raw.trim();
     if (!line) continue;
 
-    if (line.startsWith('/')) {
+    // "/skill <name> [input]" becomes a prompt but flows through the normal
+    // send path below, so it streams and lands in memory like any message.
+    let promptOverride: string | null = null;
+    if (/^\/skills?\s+\S/.test(line)) {
+      const inv = resolveSkillInvocation(line.replace(/^\/skills\b/, '/skill'));
+      if (!inv) { console.log(c.dim('  no such skill. Try "holt skill list".')); continue; }
+      promptOverride = inv.prompt;
+      console.log(c.dim(`  running skill "${inv.skillName}"...`));
+    } else if (line.startsWith('/')) {
       const parts = line.slice(1).split(/\s+/);
       const cmd = (parts[0] || '').toLowerCase();
       const rest = parts.slice(1).join(' ');
@@ -151,14 +161,22 @@ export async function chat(): Promise<void> {
         } else if (arg) {
           console.log(c.dim(`  "${arg}" is not available. Available: ${all.join(', ') || 'none'}`));
         } else {
+          const cfgRef = cfg;
+          const activeId = active.id;
           const labels = all.map((id) => {
-            const a = findApiBrain(cfg, id);
+            const a = findApiBrain(cfgRef, id);
             const shown = a ? `${id} (api: ${a.provider}/${a.model})` : id;
-            return id === active.id ? c.accent(shown + ' (current)') : shown;
+            return id === activeId ? c.accent(shown + ' (current)') : shown;
           });
           console.log(c.dim('  brains: ' + labels.join('   ')));
           console.log(c.dim('  usage: /brain <name>'));
         }
+        continue;
+      }
+
+      if (cmd === 'skill' || cmd === 'skills') {
+        const names = listSkills().map((s) => s.name);
+        console.log(c.dim('  skills: ' + (names.join('  ') || 'none') + '   usage: /skill <name> [input]'));
         continue;
       }
 
@@ -182,7 +200,9 @@ export async function chat(): Promise<void> {
       : `${active.label} is thinking...`;
     console.log(c.dim(`  ${label}`) + '\n');
 
-    const prompt = renderPrompt(history, line, remembered);
+    const skillsBlock = skillsPromptBlock();
+    const base = renderPrompt(history, line, remembered);
+    const prompt = promptOverride ?? (skillsBlock ? skillsBlock + '\n\n' + base : base);
 
     // Stream the reply as it arrives, regardless of brain kind.
     let streamed = false;
