@@ -6,9 +6,9 @@ Thanks for your interest! Holt is designed so you can extend it **without touchi
 
 ## Ways to contribute
 
-- **Skills** — Holt uses the [agentskills.io](https://agentskills.io) format. A skill is largely Markdown; you don't need to read the core to write one.
-- **Plugins** — providers, channels, embeddings, and tools are [MCP](https://modelcontextprotocol.io) servers. Write them in any language that speaks MCP.
-- **Core** — TypeScript. Small and strongly typed. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+- **Skills**: Holt uses the [agentskills.io](https://agentskills.io) format. A skill is largely Markdown; you don't need to read the core to write one.
+- **Plugins**: providers, channels, embeddings, and tools are [MCP](https://modelcontextprotocol.io) servers. Write them in any language that speaks MCP.
+- **Core**: TypeScript. Small and strongly typed. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Getting started (dev)
 
@@ -22,7 +22,7 @@ npm run typecheck
 
 ## Ground rules
 
-- Keep the core small — if it can be a plugin, make it a plugin.
+- Keep the core small. If it can be a plugin, make it a plugin.
 - Never commit secrets or personal data. `config.yml`, `.env`, and `*.db` are git-ignored for a reason.
 - Open an issue to discuss larger changes before a big PR.
 

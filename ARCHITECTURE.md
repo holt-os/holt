@@ -1,6 +1,6 @@
 # Architecture
 
-Holt is a small, strongly-typed **TypeScript core** surrounded by an **MCP plugin pantry**. The core knows nothing about any plugin's language — providers, embeddings, skills, channels, and tools all speak the [Model Context Protocol](https://modelcontextprotocol.io).
+Holt is a small, strongly-typed **TypeScript core** surrounded by an **MCP plugin pantry**. The core knows nothing about any plugin's language. Providers, embeddings, skills, channels, and tools all speak the [Model Context Protocol](https://modelcontextprotocol.io).
 
 ```
    you ──(CLI)────────▶┌─────────────────────────────────────┐
@@ -22,7 +22,7 @@ Holt is a small, strongly-typed **TypeScript core** surrounded by an **MCP plugi
 - **Small core, everything else is a plugin.** No plugin is privileged. The core boots Node-only; other runtimes (e.g. Python for a plugin) are installed on demand.
 - **Provider-agnostic brain.** One unified interface; the model is config, not code.
 - **Local executes, cloud reviews.** The executor (often a local model) runs freely on safe steps; the reviewer (a cloud model) gates only risky/irreversible actions.
-- **Memory you can see.** RAG over `sqlite-vec` plus a navigable knowledge graph — no black boxes.
+- **Memory you can see.** RAG over `sqlite-vec` plus a navigable knowledge graph, with no black boxes.
 - **Standard skills.** [agentskills.io](https://agentskills.io) format, so skills are portable in and out of Holt.
 
 ## Layout
