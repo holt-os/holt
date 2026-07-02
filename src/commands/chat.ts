@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { loadConfig, BRAIN_IDS, type BrainId } from '../config';
+import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
 import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
+import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
+import { saveReply } from '../output';
 import { runSettings } from './setting';
 import { init } from './init';
 import { ensureTrusted } from '../workspace';
@@ -10,13 +12,30 @@ import { c, createReader } from '../ui';
 function help(): void {
   console.log(c.dim([
     '  commands:',
-    '    /brain [name]     switch brain (claude, codex, gemini). context is kept.',
+    '    /brain [name]     switch brain (CLI or API). context is kept.',
     '    /memory [query]   memory stats, or preview what a query would recall',
-    '    /setting          configure brains and your launch command',
+    '    /output [fmt]     show or set output format: markdown | html',
+    '    /save [name]      save the last reply to a file in this folder',
+    '    /setting          configure brains, API brains, and your launch command',
     '    /clear            forget this session so far (saved memory stays)',
     '    /help             this list',
     '    /exit             leave',
   ].join('\n')));
+}
+
+/** A resolved brain to dispatch to: either a CLI brain or an API brain. */
+type Active =
+  | { kind: 'cli'; id: BrainId; label: string }
+  | { kind: 'api'; id: string; label: string; brain: ApiBrain };
+
+function resolveActive(cfg: HoltConfig, id: string): Active | null {
+  if ((BRAIN_IDS as string[]).includes(id)) {
+    const b = cfg.brains[id as BrainId];
+    return { kind: 'cli', id: id as BrainId, label: b.label };
+  }
+  const api = findApiBrain(cfg, id);
+  if (api) return { kind: 'api', id, label: `${id} (api: ${api.provider}/${api.model})`, brain: api };
+  return null;
 }
 
 /** `holt chat`: interactive session with persistent memory and brain switching. */
@@ -35,13 +54,21 @@ export async function chat(): Promise<void> {
     return;
   }
 
-  let current: BrainId = cfg.defaultBrain;
+  let active = resolveActive(cfg, cfg.defaultBrain);
+  if (!active) {
+    // Default points at something no longer available; fall back to any enabled CLI brain.
+    const fallback = BRAIN_IDS.find((id) => (cfg as HoltConfig).brains[id].enabled) ?? cfg.apiBrains[0]?.id ?? null;
+    active = fallback ? resolveActive(cfg, fallback) : null;
+    if (!active) { close(); console.log(c.dim('\nNo brain is ready. Run "holt setting".\n')); return; }
+  }
+
   const session = newSessionId();
   const history: Turn[] = [];
+  let lastReply = '';
 
   const embedOk = await embeddingsAvailable();
   const stats = memStats();
-  console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${cfg.brains[current].label}`));
+  console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${active.label}`));
   console.log(c.dim(
     `Memory: ${stats.turns} moments from ${stats.sessions} session${stats.sessions === 1 ? '' : 's'} in this folder` +
     ` (recall: ${embedOk ? 'embeddings via local Ollama' : 'keyword match'}).`,
@@ -49,7 +76,7 @@ export async function chat(): Promise<void> {
   if (embedOk && stats.withEmbeddings < stats.turns) {
     console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
   }
-  console.log(c.dim('Type a message. Commands: /brain  /memory  /setting  /clear  /help  /exit\n'));
+  console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /setting  /clear  /help  /exit\n'));
 
   while (true) {
     const raw = await ask(c.accent('› '));
@@ -80,23 +107,56 @@ export async function chat(): Promise<void> {
         continue;
       }
 
+      if (cmd === 'output') {
+        const want = arg;
+        if (want === 'markdown' || want === 'md') { cfg.outputFormat = 'markdown'; saveConfig(cfg); console.log(c.green('  output format: markdown')); }
+        else if (want === 'html') { cfg.outputFormat = 'html'; saveConfig(cfg); console.log(c.green('  output format: html')); }
+        else if (want) console.log(c.dim('  usage: /output markdown | html'));
+        else console.log(c.dim(`  output format: ${cfg.outputFormat}  (change with /output markdown | html)`));
+        continue;
+      }
+
+      if (cmd === 'save') {
+        if (!lastReply) { console.log(c.dim('  nothing to save yet. Ask something first.')); continue; }
+        try {
+          const path = saveReply(lastReply, cfg.outputFormat, rest || undefined);
+          console.log(c.green(`  saved ${cfg.outputFormat} to ${path}`));
+        } catch (e) {
+          console.log(c.red(`  could not save: ${(e as Error).message}`));
+        }
+        continue;
+      }
+
       if (cmd === 'setting' || cmd === 'settings') {
         cfg = await runSettings(ask);
-        if (!cfg.brains[current].enabled && cfg.defaultBrain) current = cfg.defaultBrain;
-        console.log(c.dim(`  brain: ${cfg.brains[current].label}`));
+        const next = cfg.defaultBrain ? resolveActive(cfg, cfg.defaultBrain) : null;
+        // Keep current brain if still valid, else adopt default.
+        const stillValid = resolveActive(cfg, active.id);
+        active = stillValid ?? next ?? active;
+        console.log(c.dim(`  brain: ${active.label}`));
         continue;
       }
 
       if (cmd === 'brain') {
-        const enabled = BRAIN_IDS.filter((id) => (cfg as NonNullable<typeof cfg>).brains[id].enabled);
-        if (arg && (enabled as string[]).includes(arg)) {
-          current = arg as BrainId;
-          const turns = Math.floor(history.length / 2);
-          console.log(c.green(`  switched to ${cfg.brains[current].label}. Context kept (${turns} turn${turns === 1 ? '' : 's'}).`));
+        const cliEnabled = BRAIN_IDS.filter((id) => (cfg as HoltConfig).brains[id].enabled) as string[];
+        const apiIds = cfg.apiBrains.map((a) => a.id);
+        const all = [...cliEnabled, ...apiIds];
+        if (arg && all.includes(arg)) {
+          const next = resolveActive(cfg, arg);
+          if (next) {
+            active = next;
+            const turns = Math.floor(history.length / 2);
+            console.log(c.green(`  switched to ${active.label}. Context kept (${turns} turn${turns === 1 ? '' : 's'}).`));
+          }
         } else if (arg) {
-          console.log(c.dim(`  "${arg}" is not available. Installed: ${enabled.join(', ') || 'none'}`));
+          console.log(c.dim(`  "${arg}" is not available. Available: ${all.join(', ') || 'none'}`));
         } else {
-          console.log(c.dim('  brains: ' + enabled.map((id) => (id === current ? c.accent(id + ' (current)') : id)).join('  ')));
+          const labels = all.map((id) => {
+            const a = findApiBrain(cfg, id);
+            const shown = a ? `${id} (api: ${a.provider}/${a.model})` : id;
+            return id === active.id ? c.accent(shown + ' (current)') : shown;
+          });
+          console.log(c.dim('  brains: ' + labels.join('   ')));
           console.log(c.dim('  usage: /brain <name>'));
         }
         continue;
@@ -106,29 +166,36 @@ export async function chat(): Promise<void> {
       continue;
     }
 
-    const brain = cfg.brains[current];
-    if (!isInstalled(brain.command)) {
-      console.log(c.red(`  ${brain.label} (${brain.command}) is not on your PATH. Use /brain to switch or /setting.`));
+    // Guard against a CLI brain whose command vanished.
+    if (active.kind === 'cli' && !isInstalled(cfg.brains[active.id].command)) {
+      console.log(c.red(`  ${active.label} (${cfg.brains[active.id].command}) is not on your PATH. Use /brain to switch or /setting.`));
+      continue;
+    }
+    if (active.kind === 'api' && !resolveApiKey(active.brain)) {
+      console.log(c.red(`  ${active.label} has no API key. Use /setting to add one, or /brain to switch.`));
       continue;
     }
 
     const remembered = await recall(line, session, 4);
     const label = remembered.length
-      ? `${brain.label} is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
-      : `${brain.label} is thinking...`;
+      ? `${active.label} is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
+      : `${active.label} is thinking...`;
     console.log(c.dim(`  ${label}`) + '\n');
 
-    // Stream the reply as it arrives.
+    const prompt = renderPrompt(history, line, remembered);
+
+    // Stream the reply as it arrives, regardless of brain kind.
     let streamed = false;
-    const res = await runBrain(brain, renderPrompt(history, line, remembered), (chunk) => {
-      streamed = true;
-      process.stdout.write(chunk);
-    });
+    const onChunk = (chunk: string): void => { streamed = true; process.stdout.write(chunk); };
+    const res = active.kind === 'cli'
+      ? await runBrain(cfg.brains[active.id], prompt, onChunk)
+      : await runApiBrain(active.brain, prompt, onChunk);
 
     if (res.ok) {
       if (!streamed) console.log(res.text);
       if (!res.text.endsWith('\n')) console.log('');
       console.log('');
+      lastReply = res.text;
       history.push({ role: 'user', content: line });
       history.push({ role: 'assistant', content: res.text });
       // Persist both turns with embeddings when available.

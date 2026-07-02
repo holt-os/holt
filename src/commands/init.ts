@@ -1,9 +1,10 @@
-import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, type BrainId } from '../config';
+import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, type BrainId, type ApiBrain } from '../config';
 import { isInstalled } from '../brains';
 import { installAlias } from '../alias';
 import { runInteractive } from '../install';
 import { ensureTrusted, workspace } from '../workspace';
 import { embeddingsAvailable, resetEmbedProbe, EMBED_MODEL } from '../memory';
+import { connectApiBrain } from './setting';
 import { c, createReader } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
@@ -42,6 +43,15 @@ export async function init(): Promise<void> {
   for (const id of toInstall) {
     const a = ((await ask(`  ${BRAIN_DEFS[id].label} is not installed. Sign in after install? [Y/n] `)) ?? '').trim().toLowerCase();
     if (a !== 'n' && a !== 'no') loginWanted.add(id);
+  }
+
+  // Optional: connect a direct API brain (raw key, no CLI needed).
+  const connectedApiBrains: ApiBrain[] = [];
+  const apiAns = ((await ask('\nAlso connect a direct API brain (raw key, no CLI needed)? [y/N] ')) ?? '').trim().toLowerCase();
+  if (apiAns === 'y' || apiAns === 'yes') {
+    const holder = defaultConfig();
+    const brain = await connectApiBrain(ask, holder);
+    if (brain) connectedApiBrains.push(brain);
   }
 
   const defPick: BrainId = chosen.includes('claude') ? 'claude' : (chosen[0] as BrainId);
@@ -117,7 +127,10 @@ export async function init(): Promise<void> {
   // Write per-workspace config.
   const cfg = loadConfig() ?? defaultConfig();
   for (const id of BRAIN_IDS) cfg.brains[id].enabled = chosen.includes(id) && isInstalled(BRAIN_DEFS[id].command);
-  cfg.defaultBrain = cfg.brains[defaultBrain].enabled ? defaultBrain : (BRAIN_IDS.find((id) => cfg.brains[id].enabled) ?? null);
+  for (const b of connectedApiBrains) if (!cfg.apiBrains.some((a) => a.id === b.id)) cfg.apiBrains.push(b);
+  cfg.defaultBrain = cfg.brains[defaultBrain].enabled
+    ? defaultBrain
+    : (BRAIN_IDS.find((id) => cfg.brains[id].enabled) ?? cfg.apiBrains[0]?.id ?? null);
   saveConfig(cfg);
 
   console.log('\n' + c.green('Saved to ./.holt/config.json'));
