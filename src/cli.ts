@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Holt — an open-source personal agent OS.
+ * Holt: an open-source personal agent OS.
  * Phase 0: CLI skeleton. Commands are stubbed until the core lands.
  */
 
@@ -33,7 +33,7 @@ Holt is in early development (Phase 0). Most commands are not wired up yet.
 `;
 
 function notReady(cmd: string): void {
-  console.log(`\n  "${cmd}" is not implemented yet — Holt is in Phase 0 (skeleton).`);
+  console.log(`\n  "${cmd}" is not implemented yet. Holt is in Phase 0 (skeleton).`);
   console.log("  Follow progress: https://github.com/holt-os/holt\n");
 }
 

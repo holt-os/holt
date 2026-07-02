@@ -1,7 +1,7 @@
 {
   "name": "@holt-os/holt",
   "version": "0.0.2",
-  "description": "An open-source personal agent OS — any LLM, private memory you can see and walk.",
+  "description": "An open-source personal agent OS: any LLM, private memory you can see and walk.",
   "type": "module",
   "license": "MIT",
   "author": "Debashis Nayak",
