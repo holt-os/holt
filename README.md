@@ -24,9 +24,9 @@ Holt is an open-source, self-hosted personal agent OS. Clone it, pick your skill
 > Not functional yet — this is the intended interface (Phase 0).
 
 ```bash
-npm install -g holt      # or: pnpm add -g holt
-holt init                # pick your brain + memory (local or cloud)
-holt chat                # start talking
+npm install -g @holt-os/holt   # or: pnpm add -g @holt-os/holt
+holt init                      # pick your brain + memory (local or cloud)
+holt chat                      # start talking
 ```
 
 Add skills:
