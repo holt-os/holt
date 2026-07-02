@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test the CLI
+        run: node dist/cli.js version
+
+      - name: Guard against em-dashes
+        run: |
+          # Match U+2014 by codepoint so this file stays em-dash-free.
+          if grep -rnP '\x{2014}' src README.md ARCHITECTURE.md CONTRIBUTING.md CONFIGURATION.md; then
+            echo "em-dash found"
+            exit 1
+          fi
+          echo "no em-dashes found"
