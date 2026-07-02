@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { loadConfig, BRAIN_IDS, type BrainId } from '../config';
 import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
+import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { runSettings } from './setting';
 import { init } from './init';
 import { ensureTrusted } from '../workspace';
@@ -8,15 +10,16 @@ import { c, createReader } from '../ui';
 function help(): void {
   console.log(c.dim([
     '  commands:',
-    '    /brain [name]   switch brain (claude, codex, gemini). context is kept.',
-    '    /setting        configure brains and your launch command',
-    '    /clear          forget the conversation so far',
-    '    /help           this list',
-    '    /exit           leave',
+    '    /brain [name]     switch brain (claude, codex, gemini). context is kept.',
+    '    /memory [query]   memory stats, or preview what a query would recall',
+    '    /setting          configure brains and your launch command',
+    '    /clear            forget this session so far (saved memory stays)',
+    '    /help             this list',
+    '    /exit             leave',
   ].join('\n')));
 }
 
-/** `holt chat`: interactive session with in-chat brain switching that preserves context. */
+/** `holt chat`: interactive session with persistent memory and brain switching. */
 export async function chat(): Promise<void> {
   const { ask, close } = createReader();
 
@@ -33,10 +36,17 @@ export async function chat(): Promise<void> {
   }
 
   let current: BrainId = cfg.defaultBrain;
+  const session = newSessionId();
   const history: Turn[] = [];
 
+  const embedOk = await embeddingsAvailable();
+  const stats = memStats();
   console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${cfg.brains[current].label}`));
-  console.log(c.dim('Type a message. Commands: /brain  /setting  /clear  /help  /exit\n'));
+  console.log(c.dim(
+    `Memory: ${stats.turns} moments from ${stats.sessions} session${stats.sessions === 1 ? '' : 's'} in this folder` +
+    ` (recall: ${embedOk ? 'embeddings via local Ollama' : 'keyword match'}).`,
+  ));
+  console.log(c.dim('Type a message. Commands: /brain  /memory  /setting  /clear  /help  /exit\n'));
 
   while (true) {
     const raw = await ask(c.accent('› '));
@@ -47,11 +57,25 @@ export async function chat(): Promise<void> {
     if (line.startsWith('/')) {
       const parts = line.slice(1).split(/\s+/);
       const cmd = (parts[0] || '').toLowerCase();
+      const rest = parts.slice(1).join(' ');
       const arg = (parts[1] || '').toLowerCase();
 
       if (cmd === 'exit' || cmd === 'quit' || cmd === 'q') break;
       if (cmd === 'help' || cmd === 'h') { help(); continue; }
-      if (cmd === 'clear') { history.length = 0; console.log(c.dim('  context cleared.')); continue; }
+      if (cmd === 'clear') { history.length = 0; console.log(c.dim('  session context cleared. Saved memory is untouched.')); continue; }
+
+      if (cmd === 'memory' || cmd === 'mem') {
+        if (rest) {
+          const hits = await recall(rest, session, 5);
+          if (hits.length === 0) console.log(c.dim('  nothing relevant in memory for that.'));
+          else for (const h of hits) console.log(c.dim(`  ${(h.score).toFixed(2)}  (${h.turn.role}) ${h.turn.content.slice(0, 110).replace(/\s+/g, ' ')}`));
+        } else {
+          const s = memStats();
+          console.log(c.dim(`  ${s.turns} moments, ${s.sessions} sessions, ${s.withEmbeddings} embedded, ${(s.bytes / 1024).toFixed(1)} KB in ./.holt/memory/`));
+          console.log(c.dim('  usage: /memory <query> to preview recall, or "holt memory clear" to wipe.'));
+        }
+        continue;
+      }
 
       if (cmd === 'setting' || cmd === 'settings') {
         cfg = await runSettings(ask);
@@ -85,12 +109,29 @@ export async function chat(): Promise<void> {
       continue;
     }
 
-    console.log(c.dim(`  ${brain.label} is thinking...`));
-    const res = await runBrain(brain, renderPrompt(history, line));
+    const remembered = await recall(line, session, 4);
+    const label = remembered.length
+      ? `${brain.label} is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
+      : `${brain.label} is thinking...`;
+    console.log(c.dim(`  ${label}`) + '\n');
+
+    // Stream the reply as it arrives.
+    let streamed = false;
+    const res = await runBrain(brain, renderPrompt(history, line, remembered), (chunk) => {
+      streamed = true;
+      process.stdout.write(chunk);
+    });
+
     if (res.ok) {
+      if (!streamed) console.log(res.text);
+      if (!res.text.endsWith('\n')) console.log('');
+      console.log('');
       history.push({ role: 'user', content: line });
       history.push({ role: 'assistant', content: res.text });
-      console.log('\n' + res.text + '\n');
+      // Persist both turns with embeddings when available.
+      const now = Date.now();
+      appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'user', content: line, emb: (await embed(line)) ?? undefined });
+      appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'assistant', content: res.text, emb: (await embed(res.text)) ?? undefined });
     } else {
       console.log(c.red('\n  ' + res.text + '\n'));
     }

@@ -8,8 +8,9 @@ import { init } from './commands/init';
 import { chat } from './commands/chat';
 import { setting } from './commands/setting';
 import { login } from './commands/login';
+import { memoryCmd } from './commands/memory';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -26,7 +27,8 @@ Usage: holt <command>
 
 Commands:
   init            Trust this folder, choose and install brains, sign in, set defaults
-  chat            Start a session. Switch brains mid-chat with /brain, context is kept
+  chat            Start a session. It remembers past sessions in this folder
+  memory          Inspect memory: holt memory [search <query> | clear]
   setting         Configure brains and your launch command (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
   version         Print the Holt version
@@ -65,6 +67,9 @@ async function main(): Promise<void> {
       break;
     case 'login':
       await login(process.argv[3]);
+      break;
+    case 'memory':
+      await memoryCmd(process.argv[3], process.argv.slice(4));
       break;
     default:
       console.log(`\n  Unknown command: "${cmd}"`);

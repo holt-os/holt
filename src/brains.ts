@@ -1,11 +1,15 @@
 /** Brain adapters: shell out to an installed agent CLI in non-interactive mode. */
 import { spawn, spawnSync } from 'node:child_process';
 import type { BrainConfig } from './config';
+import type { Recalled } from './memory';
 
 export interface Turn {
   role: 'user' | 'assistant';
   content: string;
 }
+
+/** How many recent turns get replayed verbatim. Older context returns via memory recall. */
+export const MAX_REPLAY_TURNS = 12;
 
 /** Is a command available on PATH? */
 export function isInstalled(command: string): boolean {
@@ -15,21 +19,35 @@ export function isInstalled(command: string): boolean {
 }
 
 /**
- * Render the whole conversation into a single prompt so context survives a
- * brain switch. Holt owns the transcript; the underlying CLI is stateless here.
+ * Render the conversation into a single prompt so context survives a brain
+ * switch. Live history is capped; relevant older moments come from memory.
  */
-export function renderPrompt(history: Turn[], message: string): string {
-  if (history.length === 0) return message;
-  const lines = history.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`);
-  lines.push(`User: ${message}`);
-  return [
-    'You are continuing an ongoing conversation. Below is the transcript so far.',
-    'Read it for context and reply only as the assistant to the final User message.',
-    '',
-    lines.join('\n\n'),
-    '',
-    'Assistant:',
-  ].join('\n');
+export function renderPrompt(history: Turn[], message: string, memory: Recalled[] = []): string {
+  const recent = history.slice(-MAX_REPLAY_TURNS);
+  const parts: string[] = [];
+
+  if (recent.length || memory.length) {
+    parts.push(
+      'You are continuing an ongoing conversation. Use the context below and reply only as the assistant to the final User message.',
+    );
+  }
+
+  if (memory.length) {
+    parts.push(
+      '',
+      "Relevant notes from this user's earlier sessions:",
+      ...memory.map((m) => `- (${m.turn.role}) ${m.turn.content.slice(0, 500)}`),
+    );
+  }
+
+  if (recent.length) {
+    parts.push('', 'Transcript so far:', ...recent.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`));
+  }
+
+  if (parts.length === 0) return message;
+
+  parts.push('', `User: ${message}`, '', 'Assistant:');
+  return parts.join('\n');
 }
 
 export interface BrainResult {
@@ -37,8 +55,15 @@ export interface BrainResult {
   text: string;
 }
 
-/** Run one turn against a brain CLI. Resolves with the reply or an error message. */
-export function runBrain(brain: BrainConfig, prompt: string): Promise<BrainResult> {
+/**
+ * Run one turn against a brain CLI. Streams stdout chunks through onChunk as
+ * they arrive and resolves with the full reply.
+ */
+export function runBrain(
+  brain: BrainConfig,
+  prompt: string,
+  onChunk?: (chunk: string) => void,
+): Promise<BrainResult> {
   return new Promise((resolve) => {
     let child;
     try {
@@ -49,8 +74,14 @@ export function runBrain(brain: BrainConfig, prompt: string): Promise<BrainResul
     }
     let out = '';
     let err = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.stdout.on('data', (d) => {
+      const s = d.toString();
+      out += s;
+      if (onChunk) onChunk(s);
+    });
+    child.stderr.on('data', (d) => {
+      err += d.toString();
+    });
     child.on('error', (e) => resolve({ ok: false, text: `Could not run "${brain.command}": ${e.message}` }));
     child.on('close', (code) => {
       const text = out.trim();
