@@ -12,7 +12,7 @@ import { memoryCmd } from './commands/memory';
 import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
 
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗

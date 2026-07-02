@@ -60,10 +60,12 @@ export async function init(): Promise<void> {
 
   const aliasAns = ((await ask('Launch command? Type a custom word like "ai", or press enter to keep "holt": ')) ?? '').trim();
   let aliasNote = '';
+  let aliasRcFile = '';
   if (aliasAns && aliasAns !== 'holt') {
     if (isInstalled(aliasAns)) console.log(c.dim(`  note: "${aliasAns}" already exists; the alias will shadow it in new shells.`));
     const r = installAlias(aliasAns);
-    aliasNote = r.ok ? c.green(`  alias "${aliasAns}" -> holt chat added to ${r.file} (run: source ${r.file})`) : c.red('  ' + r.message);
+    if (r.ok) aliasRcFile = r.file;
+    aliasNote = r.ok ? c.green(`  alias "${aliasAns}" -> holt chat added to ${r.file}`) : c.red('  ' + r.message);
   }
 
   // Private semantic memory: local Ollama + a small embed model. No keys, nothing leaves the machine.
@@ -135,6 +137,17 @@ export async function init(): Promise<void> {
 
   console.log('\n' + c.green('Saved to ./.holt/config.json'));
   if (aliasNote) console.log(aliasNote);
-  if (cfg.defaultBrain) console.log('Start chatting:  ' + c.accent(aliasAns && aliasAns !== 'holt' ? aliasAns : 'holt chat') + '\n');
-  else console.log(c.dim('No brain is ready yet. Install one, then run "holt init" again.\n'));
+  if (cfg.defaultBrain) {
+    if (aliasRcFile) {
+      // The current shell has not read the rc file yet, so spell it out.
+      console.log('\nStart chatting:');
+      console.log('  ' + c.accent(`source ${aliasRcFile}`) + c.dim('   (once; new terminals will not need it)'));
+      console.log('  ' + c.accent(aliasAns) + '\n');
+      console.log(c.dim('  Or right now, without sourcing: holt chat\n'));
+    } else {
+      console.log('Start chatting:  ' + c.accent('holt chat') + '\n');
+    }
+  } else {
+    console.log(c.dim('No brain is ready yet. Install one, then run "holt init" again.\n'));
+  }
 }

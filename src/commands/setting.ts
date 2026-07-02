@@ -48,12 +48,25 @@ function printStatus(cfg: HoltConfig): void {
  * init so both entry points behave identically. Returns null if cancelled.
  */
 export async function connectApiBrain(ask: Ask, cfg: HoltConfig): Promise<ApiBrain | null> {
-  const provRaw = ((await ask(`  provider [${PROVIDERS.join('/')}]: `)) ?? '').trim().toLowerCase();
-  if (!(PROVIDERS as string[]).includes(provRaw)) {
-    console.log(c.dim('  cancelled (unknown provider).'));
+  // Re-ask on bad input instead of silently cancelling; enter picks the first
+  // provider, "skip" backs out on purpose.
+  let provider: Provider | null = null;
+  for (let tries = 0; tries < 3 && !provider; tries++) {
+    const provRaw = ((await ask(`  provider [${PROVIDERS.join('/')}] (enter for ${PROVIDERS[0]}, or "skip"): `)) ?? 'skip')
+      .trim()
+      .toLowerCase();
+    if (provRaw === 'skip' || provRaw === 'q' || provRaw === 'n' || provRaw === 'no') {
+      console.log(c.dim('  skipped. Add one later with "holt setting" then "c".'));
+      return null;
+    }
+    if (provRaw === '') provider = PROVIDERS[0] as Provider;
+    else if ((PROVIDERS as string[]).includes(provRaw)) provider = provRaw as Provider;
+    else console.log(c.dim(`  "${provRaw}" is not a provider. Type one of: ${PROVIDERS.join(', ')}`));
+  }
+  if (!provider) {
+    console.log(c.dim('  skipped after three tries. Add one later with "holt setting" then "c".'));
     return null;
   }
-  const provider = provRaw as Provider;
 
   const suggestion = PROVIDER_MODEL_SUGGESTION[provider];
   const modelRaw = ((await ask(`  model (enter for ${suggestion}): `)) ?? '').trim();
