@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
  * Holt: an open-source personal agent OS.
- * Phase 0: init, chat (with in-conversation brain switching), and settings.
+ * Phase 0: per-folder trust, init (detect/install/sign-in), chat with
+ * context-preserving brain switching, settings, and login.
  */
 import { init } from './commands/init';
 import { chat } from './commands/chat';
 import { setting } from './commands/setting';
+import { login } from './commands/login';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -23,12 +25,14 @@ const HELP = `${BANNER}
 Usage: holt <command>
 
 Commands:
-  init            Detect your agent CLIs, pick a brain, set a launch command
+  init            Trust this folder, choose and install brains, sign in, set defaults
   chat            Start a session. Switch brains mid-chat with /brain, context is kept
-  setting         Configure brains and your launch command
+  setting         Configure brains and your launch command (per folder)
+  login <brain>   Sign in to a brain: claude, codex, or gemini
   version         Print the Holt version
   help            Show this help
 
+Holt runs in the folder you launch it from and asks to trust it first.
 Brains are the agent CLIs on your machine: claude (Claude Code), codex, gemini.
 
 Docs: https://productsdecoded.com/holt
@@ -58,6 +62,9 @@ async function main(): Promise<void> {
     case 'setting':
     case 'settings':
       await setting();
+      break;
+    case 'login':
+      await login(process.argv[3]);
       break;
     default:
       console.log(`\n  Unknown command: "${cmd}"`);

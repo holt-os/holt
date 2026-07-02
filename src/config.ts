@@ -1,37 +1,38 @@
 /**
- * Holt config: stored at ~/.holt/config.json (written by `holt init`).
- * A "brain" in Phase 0 is an agent CLI already installed on your machine
- * (Claude Code, Codex, or Gemini CLI). No API keys required.
+ * Holt config, stored PER WORKSPACE at <folder>/.holt/config.json (written by
+ * `holt init`). A "brain" in this phase is an agent CLI installed on your
+ * machine (Claude Code, Codex, or Gemini). No API keys handled by Holt.
  */
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-
-export const HOLT_DIR = join(homedir(), '.holt');
-export const CONFIG_PATH = join(HOLT_DIR, 'config.json');
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { wsConfigPath, ensureWsDir } from './workspace';
 
 export type BrainId = 'claude' | 'codex' | 'gemini';
 
 export interface BrainConfig {
   id: BrainId;
   label: string;
-  command: string;   // the CLI on your PATH, e.g. "claude"
-  args: string[];    // non-interactive args; the prompt is appended as the last arg
-  enabled: boolean;  // detected on PATH at init time
+  command: string; // CLI on PATH, e.g. "claude"
+  args: string[]; // non-interactive args; prompt appended last
+  enabled: boolean; // installed + selected
 }
 
 export interface HoltConfig {
   version: number;
-  alias: string | null;          // custom launch command, e.g. "ai"
   defaultBrain: BrainId | null;
   brains: Record<BrainId, BrainConfig>;
 }
 
-// Known agent CLIs and how to call them non-interactively.
 export const BRAIN_DEFS: Record<BrainId, { label: string; command: string; args: string[] }> = {
   claude: { label: 'Claude Code', command: 'claude', args: ['-p'] },
   codex: { label: 'Codex (OpenAI)', command: 'codex', args: ['exec'] },
   gemini: { label: 'Gemini CLI', command: 'gemini', args: ['-p'] },
+};
+
+// How to install and sign in to each brain. These evolve upstream; adjust as needed.
+export const BRAIN_SETUP: Record<BrainId, { install: string[]; login: string[] }> = {
+  claude: { install: ['npm', 'install', '-g', '@anthropic-ai/claude-code'], login: ['claude'] },
+  codex: { install: ['npm', 'install', '-g', '@openai/codex'], login: ['codex', 'login'] },
+  gemini: { install: ['npm', 'install', '-g', '@google/gemini-cli'], login: ['gemini'] },
 };
 
 export const BRAIN_IDS: BrainId[] = ['claude', 'codex', 'gemini'];
@@ -42,14 +43,14 @@ export function defaultConfig(): HoltConfig {
     const d = BRAIN_DEFS[id];
     brains[id] = { id, label: d.label, command: d.command, args: [...d.args], enabled: false };
   }
-  return { version: 1, alias: null, defaultBrain: null, brains };
+  return { version: 2, defaultBrain: null, brains };
 }
 
 export function loadConfig(): HoltConfig | null {
-  if (!existsSync(CONFIG_PATH)) return null;
+  const path = wsConfigPath();
+  if (!existsSync(path)) return null;
   try {
-    const cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as HoltConfig;
-    // Merge in any brains missing from an older config.
+    const cfg = JSON.parse(readFileSync(path, 'utf8')) as HoltConfig;
     const base = defaultConfig();
     for (const id of BRAIN_IDS) if (!cfg.brains?.[id]) cfg.brains[id] = base.brains[id];
     return cfg;
@@ -59,6 +60,6 @@ export function loadConfig(): HoltConfig | null {
 }
 
 export function saveConfig(cfg: HoltConfig): void {
-  mkdirSync(HOLT_DIR, { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+  ensureWsDir();
+  writeFileSync(wsConfigPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf8');
 }

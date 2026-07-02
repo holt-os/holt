@@ -1,6 +1,8 @@
 import { loadConfig, BRAIN_IDS, type BrainId } from '../config';
 import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
 import { runSettings } from './setting';
+import { init } from './init';
+import { ensureTrusted } from '../workspace';
 import { c, createReader } from '../ui';
 
 function help(): void {
@@ -16,15 +18,22 @@ function help(): void {
 
 /** `holt chat`: interactive session with in-chat brain switching that preserves context. */
 export async function chat(): Promise<void> {
+  const { ask, close } = createReader();
+
+  if (!(await ensureTrusted(ask))) { close(); return; }
+
   let cfg = loadConfig();
   if (!cfg || !cfg.defaultBrain) {
-    console.log(c.dim('\nNo brain configured yet. Run "holt init" first.\n'));
+    const a = ((await ask(c.dim('No Holt setup in this folder. Set it up now? [Y/n] '))) ?? '').trim().toLowerCase();
+    close();
+    if (a === 'n' || a === 'no') { console.log(c.dim('  Run "holt init" here when ready.\n')); return; }
+    await init();
+    console.log(c.dim('\nSetup done. Run "holt chat" to start talking.\n'));
     return;
   }
 
   let current: BrainId = cfg.defaultBrain;
   const history: Turn[] = [];
-  const { ask, close } = createReader();
 
   console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${cfg.brains[current].label}`));
   console.log(c.dim('Type a message. Commands: /brain  /setting  /clear  /help  /exit\n'));

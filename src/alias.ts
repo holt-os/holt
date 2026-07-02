@@ -34,6 +34,16 @@ export function installAlias(name: string): AliasResult {
   }
 }
 
+export function currentAlias(): string | null {
+  const file = rcFile();
+  try {
+    const m = readFileSync(file, 'utf8').match(/alias\s+([^\s=]+)="holt chat"/);
+    return m ? (m[1] as string) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function removeAlias(): AliasResult {
   const file = rcFile();
   try {

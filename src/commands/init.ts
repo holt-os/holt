@@ -1,55 +1,87 @@
-import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, type BrainId } from '../config';
+import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, type BrainId } from '../config';
 import { isInstalled } from '../brains';
 import { installAlias } from '../alias';
+import { runInteractive } from '../install';
+import { ensureTrusted, workspace } from '../workspace';
 import { c, createReader } from '../ui';
 
-/** `holt init`: detect agent CLIs, pick a default brain, set an optional launch command. */
+function parseBrains(raw: string, found: BrainId[]): BrainId[] {
+  const s = raw.trim().toLowerCase();
+  if (s === '') return found.length ? found : [...BRAIN_IDS];
+  if (s === 'all') return [...BRAIN_IDS];
+  const picked = s.split(/[\s,]+/).filter((x) => (BRAIN_IDS as string[]).includes(x)) as BrainId[];
+  if (picked.length) return [...new Set(picked)];
+  return found.length ? found : ['claude'];
+}
+
+/** `holt init`: trust folder, choose + install brains, sign in, set default and launch command. */
 export async function init(): Promise<void> {
   const { ask, close } = createReader();
-  const cfg = loadConfig() ?? defaultConfig();
 
-  console.log('\n' + c.accent('Holt setup') + '\n');
+  if (!(await ensureTrusted(ask))) { close(); return; }
+
+  console.log(c.accent('Holt setup') + c.dim(`  (${workspace()})`) + '\n');
   console.log('Looking for agent CLIs on your machine...\n');
-
   const found: BrainId[] = [];
   for (const id of BRAIN_IDS) {
-    const b = cfg.brains[id];
-    const ok = isInstalled(b.command);
-    b.enabled = ok;
-    console.log(`  ${ok ? c.green('found  ') : c.dim('missing')}  ${b.label} (${b.command})`);
+    const ok = isInstalled(BRAIN_DEFS[id].command);
+    console.log(`  ${ok ? c.green('found  ') : c.dim('missing')}  ${BRAIN_DEFS[id].label} (${BRAIN_DEFS[id].command})`);
     if (ok) found.push(id);
   }
   console.log('');
 
-  if (found.length === 0) {
-    console.log(c.dim('No agent CLIs found. Install one of: claude (Claude Code), codex, or gemini,'));
-    console.log(c.dim('then run "holt init" again. You can still set a launch command below.\n'));
-  } else {
-    const def: BrainId = found.includes('claude') ? 'claude' : (found[0] as BrainId);
-    const ans = ((await ask(`Default brain? [${found.join('/')}] (${def}): `)) ?? '').trim() as BrainId;
-    cfg.defaultBrain = found.includes(ans) ? ans : def;
-    console.log(c.dim(`  default brain: ${cfg.brains[cfg.defaultBrain].label}\n`));
+  const chosen = parseBrains(
+    (await ask('Which brains do you want? claude, codex, gemini (comma-separated, or "all"): ')) ?? '',
+    found,
+  );
+  console.log(c.dim(`  using: ${chosen.join(', ')}`));
+
+  const toInstall = chosen.filter((id) => !isInstalled(BRAIN_DEFS[id].command));
+  const loginWanted = new Set<BrainId>();
+  for (const id of toInstall) {
+    const a = ((await ask(`  ${BRAIN_DEFS[id].label} is not installed. Sign in after install? [Y/n] `)) ?? '').trim().toLowerCase();
+    if (a !== 'n' && a !== 'no') loginWanted.add(id);
   }
+
+  const defPick: BrainId = chosen.includes('claude') ? 'claude' : (chosen[0] as BrainId);
+  const dans = ((await ask(`\nDefault brain? [${chosen.join('/')}] (${defPick}): `)) ?? '').trim() as BrainId;
+  const defaultBrain: BrainId = chosen.includes(dans) ? dans : defPick;
 
   const aliasAns = ((await ask('Launch command? Type a custom word like "ai", or press enter to keep "holt": ')) ?? '').trim();
+  let aliasNote = '';
   if (aliasAns && aliasAns !== 'holt') {
-    if (isInstalled(aliasAns)) console.log(c.dim(`  note: "${aliasAns}" already exists on your system; the alias will shadow it in new shells.`));
+    if (isInstalled(aliasAns)) console.log(c.dim(`  note: "${aliasAns}" already exists; the alias will shadow it in new shells.`));
     const r = installAlias(aliasAns);
-    if (r.ok) {
-      cfg.alias = aliasAns;
-      console.log(c.green(`  alias "${aliasAns}" -> holt chat, added to ${r.file}`));
-      console.log(c.dim(`  run: source ${r.file}   (or open a new terminal)`));
-    } else {
-      console.log(c.red('  ' + r.message));
-    }
-  } else {
-    cfg.alias = null;
+    aliasNote = r.ok ? c.green(`  alias "${aliasAns}" -> holt chat added to ${r.file} (run: source ${r.file})`) : c.red('  ' + r.message);
   }
 
+  close(); // release stdin before running interactive installs/logins
+
+  // Auto-install chosen brains that are missing.
+  for (const id of toInstall) {
+    const s = BRAIN_SETUP[id];
+    console.log('\n' + c.accent(`Installing ${BRAIN_DEFS[id].label}`) + c.dim(`  (${s.install.join(' ')})`));
+    const code = await runInteractive(s.install[0] as string, s.install.slice(1));
+    console.log(code === 0 ? c.green(`  ${BRAIN_DEFS[id].label} installed.`) : c.red(`  Install failed (exit ${code}). Run manually: ${s.install.join(' ')}`));
+  }
+
+  // Hand off to each tool's own sign-in.
+  for (const id of toInstall) {
+    if (!loginWanted.has(id) || !isInstalled(BRAIN_DEFS[id].command)) continue;
+    const s = BRAIN_SETUP[id];
+    console.log('\n' + c.accent(`Sign in to ${BRAIN_DEFS[id].label}`));
+    console.log(c.dim(`  Starting "${s.login.join(' ')}". Complete sign-in, then exit that tool to return here.`));
+    await runInteractive(s.login[0] as string, s.login.slice(1));
+  }
+
+  // Write per-workspace config.
+  const cfg = loadConfig() ?? defaultConfig();
+  for (const id of BRAIN_IDS) cfg.brains[id].enabled = chosen.includes(id) && isInstalled(BRAIN_DEFS[id].command);
+  cfg.defaultBrain = cfg.brains[defaultBrain].enabled ? defaultBrain : (BRAIN_IDS.find((id) => cfg.brains[id].enabled) ?? null);
   saveConfig(cfg);
-  const launch = cfg.alias ? cfg.alias : 'holt chat';
-  console.log('\n' + c.green('Saved to ~/.holt/config.json'));
-  if (cfg.defaultBrain) console.log('Start chatting:  ' + c.accent(launch) + '\n');
-  else console.log(c.dim('Install an agent CLI, run "holt init" again, then "holt chat".\n'));
-  close();
+
+  console.log('\n' + c.green('Saved to ./.holt/config.json'));
+  if (aliasNote) console.log(aliasNote);
+  if (cfg.defaultBrain) console.log('Start chatting:  ' + c.accent(aliasAns && aliasAns !== 'holt' ? aliasAns : 'holt chat') + '\n');
+  else console.log(c.dim('No brain is ready yet. Install one, then run "holt init" again.\n'));
 }

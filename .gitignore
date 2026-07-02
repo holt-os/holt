@@ -8,6 +8,7 @@ build/
 *.tsbuildinfo
 
 # Local config & data (never commit secrets or personal memory)
+.holt/
 config.yml
 .env
 .env.*
