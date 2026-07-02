@@ -1,0 +1,53 @@
+{
+  "name": "holt",
+  "version": "0.0.1",
+  "description": "An open-source personal agent OS — any LLM, private memory you can see and walk.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Debashis Nayak",
+  "homepage": "https://productsdecoded.com/holt",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/holt-os/holt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/holt-os/holt/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "agent-os",
+    "personal-assistant",
+    "llm",
+    "mcp",
+    "memory",
+    "rag",
+    "knowledge-graph",
+    "self-hosted",
+    "local-first",
+    "agentskills"
+  ],
+  "bin": {
+    "holt": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "config.example.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsup src/cli.ts --format esm --clean --dts",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.1.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

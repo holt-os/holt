@@ -1,0 +1,38 @@
+# Holt configuration — copy to config.yml and edit.
+# config.yml is git-ignored; never commit secrets or personal memory.
+
+# ── Brain ────────────────────────────────────────────────────────────────
+# The LLM that runs the agent. Provider-agnostic: swap freely.
+brain:
+  provider: anthropic          # anthropic | openai | gemini | local
+  model: claude-opus-4-8       # e.g. gpt-5.x | gemini-3.x | a local model tag
+  api_key_env: ANTHROPIC_API_KEY   # name of the env var holding the key
+
+# ── Orchestration ────────────────────────────────────────────────────────
+# Optional: let a local model do the work while a cloud model reviews only
+# risky/irreversible actions (file writes, deletes, shell, sending, spending).
+orchestration:
+  enabled: false
+  executor:                    # the worker (usually a local model)
+    provider: local
+    model: ""                  # e.g. a local coding model via Ollama
+  reviewer:                    # gates risky actions: approve | edit | block
+    provider: anthropic
+    model: claude-opus-4-8
+
+# ── Memory ───────────────────────────────────────────────────────────────
+memory:
+  store: sqlite-vec            # sqlite-vec (zero infra) | pgvector
+  embeddings: local            # local | openai | gemini
+  # For local embeddings, Holt uses a local model (auto-set up on first run).
+
+# ── Output ───────────────────────────────────────────────────────────────
+output:
+  format: markdown             # markdown | html
+
+# ── Channels ─────────────────────────────────────────────────────────────
+# CLI always works. Everything below is opt-in.
+channels:
+  telegram:
+    enabled: false
+    token_env: TELEGRAM_BOT_TOKEN
