@@ -38,6 +38,7 @@ During `holt init` you:
 2. **Choose brains** (claude, codex, gemini). Holt installs any you pick that are missing.
 3. **Sign in.** For a newly installed brain, Holt starts that tool's own login (browser or its own prompt). Holt never stores your credentials.
 4. **Pick a default** brain and, optionally, a **launch command** (a short word like `ai` that runs `holt chat`).
+5. **Enable semantic memory.** If you say yes, Holt sets up a local [Ollama](https://ollama.com) with a small embed model so recall works by meaning, fully offline.
 
 ## Using it
 
@@ -61,7 +62,7 @@ Every exchange is saved to `<folder>/.holt/memory/turns.jsonl`, private and loca
 
 Two recall modes, picked automatically:
 
-- **Semantic** (best): if a local [Ollama](https://ollama.com) is running with an embedding model (`ollama pull nomic-embed-text`), recall matches by meaning. Asking "who owns my apartment" finds "my landlord is called Pieter". No API keys, nothing leaves your machine.
+- **Semantic** (best): a local [Ollama](https://ollama.com) with an embedding model, which `holt init` offers to set up for you. Recall matches by meaning: asking "who owns my apartment" finds "my landlord is called Pieter". No API keys, nothing leaves your machine.
 - **Keyword** (fallback): with no Ollama, recall matches by word overlap. Still useful, zero setup.
 
 Inspect it any time:
@@ -69,8 +70,11 @@ Inspect it any time:
 ```bash
 holt memory                    # stats for this folder
 holt memory search <query>     # find remembered moments
+holt memory embed              # embed older moments for semantic recall
 holt memory clear              # wipe this folder's memory
 ```
+
+Turns saved before semantic memory was enabled are upgraded in one pass with `holt memory embed`.
 
 Long conversations stay cheap: only recent turns are replayed verbatim, older context comes back through recall.
 

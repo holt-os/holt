@@ -1,4 +1,4 @@
-import { memStats, recall, clearMemory, loadTurns, embeddingsAvailable } from '../memory';
+import { memStats, recall, clearMemory, loadTurns, embeddingsAvailable, backfillEmbeddings, EMBED_MODEL } from '../memory';
 import { ensureTrusted } from '../workspace';
 import { c, createReader } from '../ui';
 
@@ -15,6 +15,23 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
     const a = ((await ask(`\n  Delete all ${s.turns} remembered moments in this folder? [y/N] `)) ?? '').trim().toLowerCase();
     if (a === 'y' || a === 'yes') { clearMemory(); console.log(c.green('  Memory cleared.\n')); }
     else console.log(c.dim('  Kept.\n'));
+    close();
+    return;
+  }
+
+  if (action === 'embed') {
+    if (!(await embeddingsAvailable())) {
+      console.log(c.dim(`\n  No local Ollama with ${EMBED_MODEL} reachable. Run "holt init" to set it up.\n`));
+      close();
+      return;
+    }
+    const missing = loadTurns().filter((t) => !Array.isArray(t.emb)).length;
+    if (missing === 0) { console.log(c.dim('\n  All moments already have embeddings.\n')); close(); return; }
+    console.log('');
+    const r = await backfillEmbeddings((done, total) => {
+      process.stdout.write(`\r  embedding ${done}/${total}...`);
+    });
+    console.log('\n' + c.green(`  Done. ${r.embedded} of ${r.total} moments embedded.`) + '\n');
     close();
     return;
   }
@@ -44,7 +61,11 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
   console.log(`  embedded    ${s.withEmbeddings} of ${s.turns}`);
   console.log(`  size        ${(s.bytes / 1024).toFixed(1)} KB  (./.holt/memory/turns.jsonl)`);
   console.log(`  recall via  ${embedOk ? 'embeddings (local Ollama)' : 'keyword match (start Ollama with an embed model for semantic recall)'}`);
+  if (embedOk && s.withEmbeddings < s.turns) {
+    console.log(c.dim(`\n  ${s.turns - s.withEmbeddings} moments lack embeddings. Run "holt memory embed" to upgrade them to semantic recall.`));
+  }
   console.log(c.dim('\n  holt memory search <query>   find remembered moments'));
+  console.log(c.dim('  holt memory embed            embed older moments for semantic recall'));
   console.log(c.dim('  holt memory clear            wipe this folder\'s memory\n'));
   close();
 }

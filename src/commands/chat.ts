@@ -46,6 +46,9 @@ export async function chat(): Promise<void> {
     `Memory: ${stats.turns} moments from ${stats.sessions} session${stats.sessions === 1 ? '' : 's'} in this folder` +
     ` (recall: ${embedOk ? 'embeddings via local Ollama' : 'keyword match'}).`,
   ));
+  if (embedOk && stats.withEmbeddings < stats.turns) {
+    console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
+  }
   console.log(c.dim('Type a message. Commands: /brain  /memory  /setting  /clear  /help  /exit\n'));
 
   while (true) {

@@ -3,7 +3,7 @@
  * Recall works two ways: embeddings via a local Ollama if one is running (no keys,
  * fully private), otherwise a keyword overlap fallback. Zero dependencies.
  */
-import { appendFileSync, readFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { wsHoltDir } from './workspace';
@@ -18,7 +18,7 @@ export interface MemTurn {
 }
 
 const OLLAMA_URL = process.env.HOLT_OLLAMA_URL || 'http://127.0.0.1:11434';
-const EMBED_MODEL = process.env.HOLT_EMBED_MODEL || 'nomic-embed-text';
+export const EMBED_MODEL = process.env.HOLT_EMBED_MODEL || 'nomic-embed-text';
 
 export function memDir(): string {
   return join(wsHoltDir(), 'memory');
@@ -33,6 +33,11 @@ export function newSessionId(): string {
 // ---- embeddings (optional, local) ----
 
 let embedProbe: boolean | null = null;
+
+/** Forget the probe result (used after init installs Ollama or pulls the model). */
+export function resetEmbedProbe(): void {
+  embedProbe = null;
+}
 
 /** Is a local Ollama with the embed model reachable? Probed once per process. */
 export async function embeddingsAvailable(): Promise<boolean> {
@@ -164,4 +169,31 @@ export async function recall(query: string, currentSession: string, k = 4): Prom
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, k);
+}
+
+// ---- backfill ----
+
+/** Embed every stored turn that lacks a vector, then rewrite the store. */
+export async function backfillEmbeddings(
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ embedded: number; total: number }> {
+  const turns = loadTurns();
+  const missing = turns.filter((t) => !Array.isArray(t.emb));
+  if (missing.length === 0) return { embedded: 0, total: 0 };
+
+  let done = 0;
+  let embedded = 0;
+  for (const t of missing) {
+    const e = await embed(t.content);
+    if (e) {
+      t.emb = e;
+      embedded++;
+    }
+    done++;
+    if (onProgress) onProgress(done, missing.length);
+  }
+
+  mkdirSync(memDir(), { recursive: true });
+  writeFileSync(memPath(), turns.map((t) => JSON.stringify(t)).join('\n') + '\n', 'utf8');
+  return { embedded, total: missing.length };
 }

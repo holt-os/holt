@@ -10,7 +10,7 @@ import { setting } from './commands/setting';
 import { login } from './commands/login';
 import { memoryCmd } from './commands/memory';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗

@@ -3,6 +3,7 @@ import { isInstalled } from '../brains';
 import { installAlias } from '../alias';
 import { runInteractive } from '../install';
 import { ensureTrusted, workspace } from '../workspace';
+import { embeddingsAvailable, resetEmbedProbe, EMBED_MODEL } from '../memory';
 import { c, createReader } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
@@ -55,6 +56,21 @@ export async function init(): Promise<void> {
     aliasNote = r.ok ? c.green(`  alias "${aliasAns}" -> holt chat added to ${r.file} (run: source ${r.file})`) : c.red('  ' + r.message);
   }
 
+  // Private semantic memory: local Ollama + a small embed model. No keys, nothing leaves the machine.
+  let wantMemorySetup = false;
+  const embedReady = await embeddingsAvailable();
+  if (embedReady) {
+    console.log(c.dim('\nSemantic memory: ready (local Ollama with ' + EMBED_MODEL + ' detected).'));
+  } else {
+    const ollamaHere = isInstalled('ollama');
+    const q = ollamaHere
+      ? `Semantic memory needs a local embed model. Pull ${EMBED_MODEL} with Ollama now? [Y/n] `
+      : 'Enable private semantic memory? Installs Ollama plus a small local embed model. Everything stays on your machine. [Y/n] ';
+    const a = ((await ask('\n' + q)) ?? '').trim().toLowerCase();
+    wantMemorySetup = a !== 'n' && a !== 'no';
+    if (!wantMemorySetup) console.log(c.dim('  Okay. Memory still works with keyword recall; run "holt init" again anytime.'));
+  }
+
   close(); // release stdin before running interactive installs/logins
 
   // Auto-install chosen brains that are missing.
@@ -72,6 +88,30 @@ export async function init(): Promise<void> {
     console.log('\n' + c.accent(`Sign in to ${BRAIN_DEFS[id].label}`));
     console.log(c.dim(`  Starting "${s.login.join(' ')}". Complete sign-in, then exit that tool to return here.`));
     await runInteractive(s.login[0] as string, s.login.slice(1));
+  }
+
+  // Set up private semantic memory if asked.
+  if (wantMemorySetup) {
+    if (!isInstalled('ollama')) {
+      if (process.platform === 'darwin' && isInstalled('brew')) {
+        console.log('\n' + c.accent('Installing Ollama') + c.dim('  (brew install ollama)'));
+        const code = await runInteractive('brew', ['install', 'ollama']);
+        if (code === 0) await runInteractive('brew', ['services', 'start', 'ollama']);
+        else console.log(c.red('  Install failed. Get Ollama from https://ollama.com/download and run "holt init" again.'));
+      } else {
+        console.log(c.dim('\n  Get Ollama from https://ollama.com/download, then run "holt init" again to finish memory setup.'));
+      }
+    }
+    if (isInstalled('ollama')) {
+      console.log('\n' + c.accent('Pulling embed model') + c.dim(`  (ollama pull ${EMBED_MODEL})`));
+      const code = await runInteractive('ollama', ['pull', EMBED_MODEL]);
+      if (code !== 0) {
+        console.log(c.dim('  Could not pull. Start Ollama (open the app or run "ollama serve"), then run:'));
+        console.log(c.dim(`    ollama pull ${EMBED_MODEL}`));
+      }
+      resetEmbedProbe();
+      if (await embeddingsAvailable()) console.log(c.green('  Semantic memory is ready. Chats in trusted folders are stored and recalled locally.'));
+    }
   }
 
   // Write per-workspace config.
