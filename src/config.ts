@@ -30,12 +30,18 @@ export interface ApiBrain {
 
 export type OutputFormat = 'markdown' | 'html';
 
+/** Memory behavior knobs. */
+export interface MemorySettings {
+  extractFacts: boolean;
+}
+
 export interface HoltConfig {
   version: number;
   defaultBrain: string | null; // a BrainId or an ApiBrain id
   brains: Record<BrainId, BrainConfig>;
   apiBrains: ApiBrain[];
   outputFormat: OutputFormat;
+  memory: MemorySettings;
 }
 
 export const BRAIN_DEFS: Record<BrainId, { label: string; command: string; args: string[] }> = {
@@ -75,7 +81,7 @@ export function defaultConfig(): HoltConfig {
     const d = BRAIN_DEFS[id];
     brains[id] = { id, label: d.label, command: d.command, args: [...d.args], enabled: false };
   }
-  return { version: 3, defaultBrain: null, brains, apiBrains: [], outputFormat: 'markdown' };
+  return { version: 4, defaultBrain: null, brains, apiBrains: [], outputFormat: 'markdown', memory: { extractFacts: true } };
 }
 
 export function loadConfig(): HoltConfig | null {
@@ -88,11 +94,15 @@ export function loadConfig(): HoltConfig | null {
     const brains = (cfg.brains ?? {}) as Record<BrainId, BrainConfig>;
     for (const id of BRAIN_IDS) if (!brains[id]) brains[id] = base.brains[id];
     return {
-      version: 3,
+      version: 4,
       defaultBrain: cfg.defaultBrain ?? null,
       brains,
       apiBrains: Array.isArray(cfg.apiBrains) ? cfg.apiBrains : [],
       outputFormat: cfg.outputFormat === 'html' ? 'html' : 'markdown',
+      memory: {
+        extractFacts:
+          cfg.memory && typeof cfg.memory.extractFacts === 'boolean' ? cfg.memory.extractFacts : true,
+      },
     };
   } catch {
     return null;

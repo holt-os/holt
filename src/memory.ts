@@ -12,7 +12,7 @@ export interface MemTurn {
   id: string;
   ts: number;
   session: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'fact';
   content: string;
   emb?: number[];
 }
@@ -25,6 +25,9 @@ export function memDir(): string {
 }
 export function memPath(): string {
   return join(memDir(), 'turns.jsonl');
+}
+export function factsMdPath(): string {
+  return join(memDir(), 'facts.md');
 }
 export function newSessionId(): string {
   return randomUUID().slice(0, 8);
@@ -97,8 +100,77 @@ export function clearMemory(): void {
   if (existsSync(memPath())) rmSync(memPath());
 }
 
+// ---- facts ----
+
+/** Normalize a fact for exact-match dedup: lowercase, collapse whitespace, strip trailing punctuation. */
+function normalizeFact(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.,;:!?]+$/, '');
+}
+
+const FACTS_HEADER = '# Holt facts\n\nDistilled memories for this folder. Safe to edit by hand.\n';
+
+/**
+ * Save a distilled fact. Dedups (normalized exact match) against existing
+ * role:'fact' rows and lines already in facts.md. On a new fact: appends a
+ * human-readable bullet to facts.md under a single dated heading, and appends
+ * an embedded recall row to turns.jsonl. Returns false when it was a duplicate.
+ */
+export async function saveFact(content: string, session: string): Promise<boolean> {
+  const clean = content.trim();
+  if (!clean) return false;
+  const norm = normalizeFact(clean);
+
+  // Dedup against existing fact rows in the jsonl.
+  for (const t of loadTurns()) {
+    if (t.role === 'fact' && normalizeFact(t.content) === norm) return false;
+  }
+  // Dedup against lines already written to facts.md.
+  if (existsSync(factsMdPath())) {
+    for (const line of readFileSync(factsMdPath(), 'utf8').split('\n')) {
+      const l = line.trim();
+      if (!l.startsWith('- ')) continue;
+      if (normalizeFact(l.slice(2)) === norm) return false;
+    }
+  }
+
+  mkdirSync(memDir(), { recursive: true });
+
+  const today = new Date().toISOString().slice(0, 10);
+  let existing = existsSync(factsMdPath()) ? readFileSync(factsMdPath(), 'utf8') : '';
+  if (!existing) existing = FACTS_HEADER;
+
+  // Find the last dated heading; write today's heading only if it is not already the last.
+  const headings = existing.match(/^## (\d{4}-\d{2}-\d{2})/gm);
+  const lastHeading = headings && headings.length ? headings[headings.length - 1] : null;
+  const needsHeading = lastHeading !== `## ${today}`;
+
+  let addition = '';
+  if (needsHeading) {
+    if (!existing.endsWith('\n')) addition += '\n';
+    addition += `\n## ${today}\n`;
+  }
+  addition += `- ${clean}\n`;
+
+  writeFileSync(factsMdPath(), existing + addition, 'utf8');
+
+  appendTurn({
+    id: randomUUID().slice(0, 8),
+    ts: Date.now(),
+    session,
+    role: 'fact',
+    content: clean,
+    emb: (await embed(clean)) ?? undefined,
+  });
+  return true;
+}
+
 export interface MemStats {
   turns: number;
+  facts: number;
   sessions: number;
   withEmbeddings: number;
   bytes: number;
@@ -108,8 +180,9 @@ export function memStats(): MemStats {
   const turns = loadTurns();
   const sessions = new Set(turns.map((t) => t.session)).size;
   const withEmbeddings = turns.filter((t) => Array.isArray(t.emb)).length;
+  const facts = turns.filter((t) => t.role === 'fact').length;
   const bytes = existsSync(memPath()) ? statSync(memPath()).size : 0;
-  return { turns: turns.length, sessions, withEmbeddings, bytes };
+  return { turns: turns.length, facts, sessions, withEmbeddings, bytes };
 }
 
 // ---- recall ----
@@ -151,6 +224,9 @@ export interface Recalled {
   score: number;
 }
 
+/** Distilled facts rank slightly higher than raw turns once above threshold. */
+const FACT_BOOST = 1.15;
+
 /** Top-k relevant turns from PAST sessions (never the current one). */
 export async function recall(query: string, currentSession: string, k = 4): Promise<Recalled[]> {
   const past = loadTurns().filter((t) => t.session !== currentSession);
@@ -164,7 +240,11 @@ export async function recall(query: string, currentSession: string, k = 4): Prom
     let score = 0;
     if (qEmb && Array.isArray(turn.emb)) score = cosine(qEmb, turn.emb);
     else score = keywordScore(qTok, turn.content);
-    if (score > (qEmb && Array.isArray(turn.emb) ? 0.35 : 0.15)) scored.push({ turn, score });
+    if (score > (qEmb && Array.isArray(turn.emb) ? 0.35 : 0.15)) {
+      // Boost only after passing the threshold, so a weak fact never sneaks through.
+      if (turn.role === 'fact') score *= FACT_BOOST;
+      scored.push({ turn, score });
+    }
   }
 
   scored.sort((a, b) => b.score - a.score);

@@ -38,7 +38,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 }
 ```
 
-- `version` (number): config schema version. Currently `3`. Holt fills in missing fields from defaults when it loads an older file.
+- `version` (number): config schema version. Currently `4`. Holt fills in missing fields from defaults when it loads an older file.
 - `defaultBrain` (string | `null`): the brain a new `holt chat` starts with: a CLI brain id (`claude`/`codex`/`gemini`) or the short name of an API brain. `null` means no brain is ready.
 - `brains` (map): one entry per known brain.
   - `id`: the brain key, same as the map key.
@@ -49,6 +49,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 
 - `apiBrains` (array): direct provider connections added via `holt setting` or `holt init`. Each entry: `id` (your short name), `provider` (`anthropic` | `openai` | `gemini`), `model` (free text), optional `keyEnv` (name of an env var holding the key). Key resolution order: `keyEnv`, then `~/.holt/credentials.json`, then the provider standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`).
 - `outputFormat` (`"markdown"` | `"html"`): how `/save` writes replies. Toggle in chat with `/output`.
+- `memory` (object): memory behavior. `extractFacts` (boolean, default `true`): when true, Holt distills 1 to 5 durable facts from the transcript when a chat session ends and saves them to `facts.md` plus the recall index. Set it to `false` to disable fact distillation entirely.
 
 To point a brain at a different CLI or add flags, edit `command` / `args`. See the echo-brain trick in `CONTRIBUTING.md` for a testing use of this.
 
@@ -80,7 +81,10 @@ Per-folder conversation memory, append-only, one JSON object per line:
 ```
 
 - `emb` is present only when a local Ollama embedded the turn; otherwise the turn is text-only and recalled by keyword.
+- `role` is `user`, `assistant`, or `fact`. A `fact` row is a distilled memory: it is embedded and recalled like any turn, and ranks slightly higher when it matches.
 - Inspect with `holt memory`, search with `holt memory search <query>`, backfill vectors with `holt memory embed`, wipe with `holt memory clear`.
+
+Distilled facts also live in a human-editable companion file, `<folder>/.holt/memory/facts.md`, one dated `##` heading with `- ` bullets. It is written alongside the `fact` rows when a session ends, and is safe to edit by hand. View it with `holt memory facts`. Disable distillation with the `memory.extractFacts` config flag.
 
 ## Launch alias in your shell rc
 

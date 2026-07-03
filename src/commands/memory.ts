@@ -1,4 +1,5 @@
-import { memStats, recall, clearMemory, loadTurns, embeddingsAvailable, backfillEmbeddings, EMBED_MODEL } from '../memory';
+import { existsSync, readFileSync } from 'node:fs';
+import { memStats, recall, clearMemory, loadTurns, embeddingsAvailable, backfillEmbeddings, EMBED_MODEL, factsMdPath } from '../memory';
 import { ensureTrusted } from '../workspace';
 import { c, createReader } from '../ui';
 
@@ -26,12 +27,24 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
       return;
     }
     const missing = loadTurns().filter((t) => !Array.isArray(t.emb)).length;
-    if (missing === 0) { console.log(c.dim('\n  All moments already have embeddings.\n')); close(); return; }
+    if (missing === 0) { console.log(c.dim('\n  All memories already have embeddings.\n')); close(); return; }
     console.log('');
     const r = await backfillEmbeddings((done, total) => {
       process.stdout.write(`\r  embedding ${done}/${total}...`);
     });
-    console.log('\n' + c.green(`  Done. ${r.embedded} of ${r.total} moments embedded.`) + '\n');
+    console.log('\n' + c.green(`  Done. ${r.embedded} of ${r.total} memories embedded.`) + '\n');
+    close();
+    return;
+  }
+
+  if (action === 'facts') {
+    if (!existsSync(factsMdPath())) {
+      console.log(c.dim('\n  No facts distilled yet. They form when you end a chat session.\n'));
+      close();
+      return;
+    }
+    const body = readFileSync(factsMdPath(), 'utf8').trim();
+    console.log('\n' + body + '\n');
     close();
     return;
   }
@@ -57,6 +70,7 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
   const sessions = new Set(loadTurns().map((t) => t.session)).size;
   console.log('\n' + c.accent('Holt memory') + c.dim('  (this folder)'));
   console.log(`  moments     ${s.turns}`);
+  console.log(`  facts       ${s.facts}  (./.holt/memory/facts.md)`);
   console.log(`  sessions    ${sessions}`);
   console.log(`  embedded    ${s.withEmbeddings} of ${s.turns}`);
   console.log(`  size        ${(s.bytes / 1024).toFixed(1)} KB  (./.holt/memory/turns.jsonl)`);
@@ -65,7 +79,8 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
     console.log(c.dim(`\n  ${s.turns - s.withEmbeddings} moments lack embeddings. Run "holt memory embed" to upgrade them to semantic recall.`));
   }
   console.log(c.dim('\n  holt memory search <query>   find remembered moments'));
-  console.log(c.dim('  holt memory embed            embed older moments for semantic recall'));
+  console.log(c.dim('  holt memory facts            show distilled facts (facts.md)'));
+  console.log(c.dim('  holt memory embed            embed older memories for semantic recall'));
   console.log(c.dim('  holt memory clear            wipe this folder\'s memory\n'));
   close();
 }
