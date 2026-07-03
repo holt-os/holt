@@ -164,15 +164,58 @@ Point the client at the folder whose memory you want it to use; Holt serves what
 
 Replies print as markdown. `/output html` (or `markdown`) switches the save format and persists it. `/save [name]` writes the last reply to the current folder: `.md`, or a small self-contained dark-theme `.html` page.
 
+## Run tasks, schedule them, reach them from your phone
+
+Beyond interactive chat, Holt can run a task once, on a timer, or from Telegram. The selected brain does the task; your memory is recalled into it automatically.
+
+### holt run
+
+Run a single task non-interactively. It recalls relevant memory, injects your skills, runs the brain once, streams the reply, and saves the exchange to this folder's memory.
+
+```bash
+holt run "summarize the open items in this folder"
+```
+
+Options: `--brain <id>` pick a brain, `--out <file>` also write the reply to a file, `--no-store` skip saving, `--no-recall` skip memory, `--quiet` suppress streaming. The folder must be trusted first (`holt init` or `holt chat` once); in a non-interactive context an untrusted folder exits non-zero instead of prompting.
+
+### holt schedule
+
+Run a task automatically on a timer, using your OS scheduler (launchd on macOS, cron on Linux). A scheduled run behaves exactly like typing `holt run` in that folder.
+
+```bash
+holt schedule add "summarize my inbox and flag what is urgent" 07:00 --notify
+holt schedule list
+holt schedule remove <id>
+```
+
+`<HH:MM>` is a 24h daily time. `--notify` pushes the output to your Telegram. Jobs live in `~/.holt/schedules.json`; each run logs to `~/.holt/logs/<id>.log`.
+
+### Telegram: chat with Holt from your phone
+
+Holt can run as a Telegram bot. Messages you send are run through your brain (with memory) and the reply comes back to your phone. Single user: only your chat id is served.
+
+```bash
+holt telegram setup   # message @BotFather for a token, paste it, auto-detect your chat id
+holt telegram         # run the bot (keep it running under a service manager)
+holt notify "backup done"          # push a one-off message
+holt run "daily brief" | holt notify   # pipe any output to your phone
+```
+
+The token is stored in `~/.holt/telegram.json` (mode 600) and never printed in full.
+
 ## Commands
 
 ```
 holt init            set up (trust, brains, sign-in, defaults) for this folder
 holt chat            start a session that remembers past ones
+holt run <task>      run one task non-interactively (recall, brain, remember)
+holt schedule        run a task on a timer: add | list | remove
+holt telegram        chat with Holt from your phone: telegram [setup]
+holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
 holt graph           see your memory as an interactive knowledge graph
-holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup for config)
+holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt skill           manage skills: list | show | create | add | remove
-holt memory          inspect memory: holt memory [search <query> | embed | clear]
+holt memory          inspect memory: holt memory [search <query> | facts | embed | clear]
 holt setting         configure brains, API brains, and launch command
 holt login <brain>   sign in to claude, codex, or gemini
 holt version         print version
@@ -181,7 +224,7 @@ holt help            show help
 
 ## Configuration
 
-`holt init` writes `<folder>/.holt/config.json` (default brain and enabled brains for that folder). Trusted folders live in `~/.holt/trust.json`. Edit settings with `holt setting`.
+`holt init` writes `<folder>/.holt/config.json` (default brain and enabled brains for that folder). Trusted folders live in `~/.holt/trust.json`. Edit settings with `holt setting`. Scheduled jobs live in `~/.holt/schedules.json`, and the Telegram token in `~/.holt/telegram.json` (mode 600).
 
 ## Architecture
 
@@ -196,8 +239,8 @@ Built in always-shippable phases toward a full-vision v1:
 2. **Any LLM directly**: API brains with your own key, HTML or Markdown output *(shipped)*
 3. **Skills**: portable SKILL.md skills, create/add/run *(shipped)*
 4. **Knowledge graph**: see and navigate your own memory with `holt graph` *(shipped)*
-5. **Orchestration**: a local model works, a cloud model reviews the risky steps
-6. **Channels and polish**: Telegram, docs site, skill registry publishing
+5. **Everywhere**: MCP server so other tools read Holt's memory, plus `holt run`, scheduling, and Telegram *(shipped)*
+6. **Next**: docs site, skill registry publishing, more channels
 
 ## Contributing
 

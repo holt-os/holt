@@ -12,8 +12,12 @@ import { memoryCmd } from './commands/memory';
 import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
 import { mcp } from './commands/mcp';
+import { run } from './commands/run';
+import { schedule } from './commands/schedule';
+import { telegram } from './commands/telegram';
+import { notify } from './commands/notify';
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -31,6 +35,10 @@ Usage: holt <command>
 Commands:
   init            Trust this folder, choose and install brains, sign in, set defaults
   chat            Start a session. It remembers past sessions in this folder
+  run <task>      Run one task non-interactively: recall, brain executes, remember
+  schedule        Fire "holt run" on a timer: holt schedule [add | list | remove]
+  telegram        Chat with Holt from your phone: holt telegram [setup]
+  notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
   memory          Inspect memory: holt memory [search <query> | embed | clear]
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
@@ -87,6 +95,18 @@ async function main(): Promise<void> {
       break;
     case 'mcp':
       await mcp(process.argv[3], process.argv.slice(4));
+      break;
+    case 'run':
+      await run(process.argv.slice(3));
+      break;
+    case 'schedule':
+      await schedule(process.argv[3], process.argv.slice(4));
+      break;
+    case 'telegram':
+      await telegram(process.argv[3], process.argv.slice(4));
+      break;
+    case 'notify':
+      await notify(process.argv.slice(3));
       break;
     default:
       console.log(`\n  Unknown command: "${cmd}"`);
