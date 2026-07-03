@@ -63,6 +63,8 @@ The point of `/brain`: Holt owns the transcript, so you can start a thread on on
 
 Every exchange is saved to `<folder>/.holt/memory/turns.jsonl`, private and local. On each message, Holt recalls the most relevant moments from your *past* sessions in that folder and hands them to the brain, so it remembers what you told it last week.
 
+When you end a chat, Holt asks the brain to distill 1 to 5 durable facts from the session (decisions, preferences, key names, numbers) and writes them to a human-readable `<folder>/.holt/memory/facts.md` you can read and edit. Those facts are also embedded and ranked slightly higher than raw turns during recall, so the signal rises to the top over time. See them with `holt memory facts`. Turn it off by setting `memory.extractFacts` to `false` in `config.json`.
+
 Two recall modes, picked automatically:
 
 - **Semantic** (best): a local [Ollama](https://ollama.com) with an embedding model, which `holt init` offers to set up for you. Recall matches by meaning: asking "who owns my apartment" finds "my landlord is called Pieter". No API keys, nothing leaves your machine.
@@ -72,6 +74,7 @@ Inspect it any time:
 
 ```bash
 holt memory                    # stats for this folder
+holt memory facts              # show the distilled facts (facts.md)
 holt memory search <query>     # find remembered moments
 holt memory embed              # embed older moments for semantic recall
 holt memory clear              # wipe this folder's memory
@@ -155,7 +158,7 @@ Small strongly-typed **TypeScript core**, zero runtime dependencies: command dis
 Built in always-shippable phases toward a full-vision v1:
 
 0. **Skeleton and chat**: trust, init with install and sign-in, chat, brain switching with kept context *(shipped)*
-1. **Memory**: per-folder store, semantic recall via local embeddings with keyword fallback, streaming replies *(shipped)*
+1. **Memory**: per-folder store, semantic recall, streaming replies, and distilled facts per session *(shipped)*
 2. **Any LLM directly**: API brains with your own key, HTML or Markdown output *(shipped)*
 3. **Skills**: portable SKILL.md skills, create/add/run *(shipped)*
 4. **Knowledge graph**: see and navigate your own memory with `holt graph` *(shipped)*
