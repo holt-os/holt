@@ -197,6 +197,21 @@ function usage(): void {
 
 /** `holt schedule [add|list|remove] ...` */
 export async function schedule(sub?: string, rest: string[] = []): Promise<void> {
+  const action = (sub || '').toLowerCase();
+
+  // Read-only subcommands never touch the system or the workspace, so they run
+  // without the trust gate (and without blocking on a prompt non-interactively).
+  if (action === 'list') {
+    listCmd();
+    return;
+  }
+  if (action !== 'add' && action !== 'remove' && action !== 'rm') {
+    usage();
+    return;
+  }
+
+  // Mutating subcommands write launchd/cron entries that run in this workspace,
+  // so they require trust first.
   const { ask, close } = createReader();
   if (!(await ensureTrusted(ask))) {
     close();
@@ -204,9 +219,6 @@ export async function schedule(sub?: string, rest: string[] = []): Promise<void>
   }
   close();
 
-  const action = (sub || '').toLowerCase();
   if (action === 'add') await addCmd(rest);
-  else if (action === 'list') listCmd();
-  else if (action === 'remove' || action === 'rm') removeCmd(rest);
-  else usage();
+  else removeCmd(rest);
 }
