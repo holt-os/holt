@@ -17,7 +17,7 @@ import { schedule } from './commands/schedule';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
 
-const VERSION = '0.8.1';
+const VERSION = '0.8.2';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗

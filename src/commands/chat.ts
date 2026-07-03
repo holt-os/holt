@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
-import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
+import { isInstalled, renderPrompt, runBrain, MAX_REPLAY_TURNS, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { extractAndSaveFacts } from '../facts';
@@ -9,7 +9,20 @@ import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills
 import { runSettings } from './setting';
 import { init } from './init';
 import { ensureTrusted } from '../workspace';
-import { c, createReader } from '../ui';
+import { c, createReader, bar } from '../ui';
+
+/** A one-line status bar: brain, a live-context fill bar, and memory size. */
+function statusLine(brainLabel: string, history: Turn[]): string {
+  const live = Math.min(history.length, MAX_REPLAY_TURNS);
+  const frac = MAX_REPLAY_TURNS ? live / MAX_REPLAY_TURNS : 0;
+  const pct = Math.round(frac * 100);
+  const mem = memStats().turns;
+  return (
+    c.dim('  ' + brainLabel + '  ') +
+    c.dim('[') + bar(frac) + c.dim(']') +
+    c.dim(`  ${pct}% context  ·  ${mem} in memory`)
+  );
+}
 
 function help(): void {
   console.log(c.dim([
@@ -79,7 +92,8 @@ export async function chat(): Promise<void> {
   if (embedOk && stats.withEmbeddings < stats.turns) {
     console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
   }
-  console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /setting  /clear  /help  /exit\n'));
+  console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /setting  /clear  /help  /exit'));
+  console.log(statusLine(active.label, history) + '\n');
 
   while (true) {
     const raw = await ask(c.accent('› '));
@@ -223,6 +237,7 @@ export async function chat(): Promise<void> {
       const now = Date.now();
       appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'user', content: line, emb: (await embed(line)) ?? undefined });
       appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'assistant', content: res.text, emb: (await embed(res.text)) ?? undefined });
+      console.log(statusLine(active.label, history) + '\n');
     } else {
       console.log(c.red('\n  ' + res.text + '\n'));
     }

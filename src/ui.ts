@@ -13,6 +13,13 @@ export const c = {
   cyan: wrap('36'),
 };
 
+/** A colored fill bar for a 0..1 fraction, e.g. green filled + dim remainder. */
+export function bar(fraction: number, width = 12): string {
+  const f = Math.max(0, Math.min(1, fraction));
+  const filled = Math.round(f * width);
+  return c.green('█'.repeat(filled)) + c.dim('░'.repeat(width - filled));
+}
+
 /** Ask returns the line, or null on EOF (so loops can end). */
 export type Ask = (q: string) => Promise<string | null>;
 
