@@ -17,6 +17,8 @@ import {
 import { isInstalled } from '../brains';
 import { installAlias, removeAlias, currentAlias } from '../alias';
 import { ensureTrusted } from '../workspace';
+import { loadTelegramConfig } from '../telegram';
+import { setupTelegram } from './telegram';
 import { c, createReader, type Ask } from '../ui';
 
 function printStatus(cfg: HoltConfig): void {
@@ -39,7 +41,10 @@ function printStatus(cfg: HoltConfig): void {
   }
   console.log(c.dim(`  output format: ${cfg.outputFormat}`));
   console.log(c.dim(`  launch command: ${currentAlias() || 'holt (default)'}`));
-  console.log('\n  ' + c.dim('[d] default brain   [t] toggle brain   [c] connect API brain   [x] remove API brain   [a] launch command   [enter] done'));
+  const tg = loadTelegramConfig();
+  console.log(c.dim(`  telegram: ${tg ? `connected (chat ${tg.allowedChatId})` : 'not set up'}`));
+  console.log('\n  ' + c.dim('[d] default brain   [t] toggle brain   [c] connect API brain   [x] remove API brain'));
+  console.log('  ' + c.dim('[a] launch command   [m] connect Telegram   [enter] done'));
 }
 
 /**
@@ -165,8 +170,10 @@ export async function runSettings(ask: Ask): Promise<HoltConfig> {
         removeAlias();
         console.log(c.dim('  reset to holt.'));
       }
+    } else if (choice === 'm') {
+      await setupTelegram(ask);
     } else {
-      console.log(c.dim('  pick d, t, c, x, a, or press enter to finish.'));
+      console.log(c.dim('  pick d, t, c, x, a, m, or press enter to finish.'));
     }
     saveConfig(cfg);
   }

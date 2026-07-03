@@ -7,7 +7,7 @@
  * The bot is single user: only the allowed chat id is served. Incoming text is
  * run through the selected brain (runTask); the reply is sent back to Telegram.
  */
-import { createReader, c } from '../ui';
+import { createReader, c, type Ask } from '../ui';
 import { isTrusted, trustDir, workspace } from '../workspace';
 import { runTask } from '../runner';
 import {
@@ -32,61 +32,72 @@ export async function telegram(sub?: string, _rest: string[] = []): Promise<void
   await runBot();
 }
 
-// ---- setup ----
+// ---- setup (reusable) ----
+
+/**
+ * Interactive Telegram setup using a caller-provided prompt, so it works
+ * standalone (holt telegram setup) and inside init / settings. Returns true if
+ * a config was saved. Entering an empty token skips without an error.
+ */
+export async function setupTelegram(ask: Ask): Promise<boolean> {
+  console.log('\n' + c.accent('Connect Holt to Telegram') + c.dim('  (chat with Holt from your phone)'));
+  console.log(c.dim('  1. Open Telegram and message @BotFather.'));
+  console.log(c.dim('  2. Send /newbot, follow the prompts, and copy the bot token it gives you.'));
+  console.log(c.dim('     A token looks like 123456789:AAF...  (keep it secret).'));
+
+  const token = ((await ask('\n  Paste your bot token (enter to skip): ')) ?? '').trim();
+  if (!token) {
+    console.log(c.dim('  Skipped. Set it up later with "holt telegram setup" or in "holt setting".'));
+    return false;
+  }
+
+  console.log('\n' + c.dim('  Now I need your chat id (so the bot only answers you).'));
+  console.log(c.dim('  Option A: open your new bot in Telegram and send it any message,'));
+  console.log(c.dim('            then I will auto-detect the chat id.'));
+  console.log(c.dim('  Option B: paste a numeric chat id yourself.'));
+
+  const mode = ((await ask('\n  Auto-detect from a message you just sent? [Y/n] ')) ?? '')
+    .trim()
+    .toLowerCase();
+
+  let allowedChatId: number | null = null;
+  if (mode === '' || mode === 'y' || mode === 'yes') {
+    // Save token temporarily so getUpdates can read it.
+    saveTelegramConfig({ token, allowedChatId: 0 });
+    console.log(c.dim('\n  Checking for a recent message...'));
+    const updates = await getUpdates(0);
+    allowedChatId = latestChatId(updates);
+    if (allowedChatId === null) {
+      console.log(c.red('  Did not find a recent message.'));
+      const manual = ((await ask('  Paste your numeric chat id instead: ')) ?? '').trim();
+      allowedChatId = parseChatId(manual);
+    }
+  } else {
+    const manual = ((await ask('  Paste your numeric chat id: ')) ?? '').trim();
+    allowedChatId = parseChatId(manual);
+  }
+
+  if (allowedChatId === null) {
+    console.log(c.red('\n  No valid chat id. Nothing saved. Try again anytime.'));
+    return false;
+  }
+
+  const cfg: TelegramConfig = { token, allowedChatId };
+  saveTelegramConfig(cfg);
+  console.log(
+    '\n' +
+      c.green('  Telegram connected.') +
+      c.dim(` token ...${token.slice(-4)}  chat id ${allowedChatId}  (~/.holt/telegram.json, mode 600)`),
+  );
+  console.log(c.dim('  Start the bot anytime with: holt telegram'));
+  return true;
+}
 
 async function setup(): Promise<void> {
   const { ask, close } = createReader();
   try {
-    console.log('\n' + c.accent('Connect Holt to Telegram'));
-    console.log(c.dim('  1. Open Telegram and message @BotFather.'));
-    console.log(c.dim('  2. Send /newbot, follow the prompts, and copy the bot token it gives you.'));
-    console.log(c.dim('     A token looks like 123456789:AAF...  (keep it secret).'));
-
-    const token = ((await ask('\n  Paste your bot token: ')) ?? '').trim();
-    if (!token) {
-      console.log(c.red('  No token entered. Cancelled.\n'));
-      return;
-    }
-
-    console.log('\n' + c.dim('  Now I need your chat id (so I only answer you).'));
-    console.log(c.dim('  Option A: open your new bot in Telegram and send it any message,'));
-    console.log(c.dim('            then I will auto-detect the chat id.'));
-    console.log(c.dim('  Option B: paste a numeric chat id yourself.'));
-
-    const mode = ((await ask('\n  Auto-detect from a message you just sent? [Y/n] ')) ?? '')
-      .trim()
-      .toLowerCase();
-
-    let allowedChatId: number | null = null;
-    if (mode === '' || mode === 'y' || mode === 'yes') {
-      // Save token temporarily so getUpdates can read it.
-      saveTelegramConfig({ token, allowedChatId: 0 });
-      console.log(c.dim('\n  Checking for a recent message...'));
-      const updates = await getUpdates(0);
-      allowedChatId = latestChatId(updates);
-      if (allowedChatId === null) {
-        console.log(c.red('  Did not find a recent message.'));
-        const manual = ((await ask('  Paste your numeric chat id instead: ')) ?? '').trim();
-        allowedChatId = parseChatId(manual);
-      }
-    } else {
-      const manual = ((await ask('  Paste your numeric chat id: ')) ?? '').trim();
-      allowedChatId = parseChatId(manual);
-    }
-
-    if (allowedChatId === null) {
-      console.log(c.red('\n  No valid chat id. Nothing saved. Run "holt telegram setup" again.\n'));
-      return;
-    }
-
-    const cfg: TelegramConfig = { token, allowedChatId };
-    saveTelegramConfig(cfg);
-    console.log(
-      '\n' +
-        c.green('  Saved.') +
-        c.dim(` token ...${token.slice(-4)}  chat id ${allowedChatId}  (~/.holt/telegram.json, mode 600)`),
-    );
-    console.log(c.dim('  Start the bot with: holt telegram\n'));
+    await setupTelegram(ask);
+    console.log('');
   } finally {
     close();
   }

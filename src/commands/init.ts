@@ -4,7 +4,9 @@ import { installAlias } from '../alias';
 import { runInteractive } from '../install';
 import { ensureTrusted, workspace } from '../workspace';
 import { embeddingsAvailable, resetEmbedProbe, EMBED_MODEL } from '../memory';
+import { loadTelegramConfig } from '../telegram';
 import { connectApiBrain } from './setting';
+import { setupTelegram } from './telegram';
 import { c, createReader } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
@@ -85,6 +87,12 @@ export async function init(): Promise<void> {
     const a = ((await ask('\n' + q)) ?? '').trim().toLowerCase();
     wantMemorySetup = a !== 'n' && a !== 'no';
     if (!wantMemorySetup) console.log(c.dim('  Okay. Memory still works with keyword recall; run "holt init" again anytime.'));
+  }
+
+  // Optional: connect Telegram to chat with Holt from your phone.
+  if (!loadTelegramConfig()) {
+    const tgAns = ((await ask('\nChat with Holt from your phone over Telegram? [y/N] ')) ?? '').trim().toLowerCase();
+    if (tgAns === 'y' || tgAns === 'yes') await setupTelegram(ask);
   }
 
   close(); // release stdin before running interactive installs/logins
