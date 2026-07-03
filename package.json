@@ -42,7 +42,8 @@
     "dev": "tsx src/cli.ts",
     "build": "tsup src/cli.ts --format esm --clean",
     "start": "node dist/cli.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "bash scripts/release.sh"
   },
   "devDependencies": {
     "tsup": "^8.1.0",

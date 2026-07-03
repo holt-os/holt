@@ -1,0 +1,111 @@
+name: Release
+
+# Fires when a version tag is pushed (scripts/release.sh does that). It verifies
+# the tag matches the code, publishes to npm with an automation token (no passkey
+# prompt), then bumps the Homebrew formula in holt-os/homebrew-tap.
+#
+# Required repo secrets:
+#   NPM_TOKEN            npm "Automation" access token (bypasses 2FA on publish)
+#   HOMEBREW_TAP_TOKEN   a token with contents:write on holt-os/homebrew-tap
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - name: Verify tag matches package.json and version.ts
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+          if ! grep -q "VERSION = '$PKG'" src/version.ts; then
+            echo "src/version.ts does not declare version $PKG"
+            exit 1
+          fi
+          echo "VERSION=$PKG" >> "$GITHUB_ENV"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Smoke test the CLI reports the release version
+        run: |
+          OUT=$(node dist/cli.js version)
+          echo "$OUT"
+          [ "$OUT" = "holt $VERSION" ] || { echo "CLI reported '$OUT', expected 'holt $VERSION'"; exit 1; }
+
+      - name: Guard against em-dashes
+        run: |
+          if grep -rnP '\x{2014}' src README.md ARCHITECTURE.md CONTRIBUTING.md CONFIGURATION.md; then
+            echo "em-dash found"
+            exit 1
+          fi
+          echo "no em-dashes found"
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: holt-os/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Bump the Homebrew formula
+        run: |
+          set -euo pipefail
+          URL="https://registry.npmjs.org/@holt-os/holt/-/holt-${VERSION}.tgz"
+          # The tarball can take a few seconds to become fetchable after publish.
+          for i in $(seq 1 12); do
+            if curl -fsSL "$URL" -o /tmp/holt.tgz; then break; fi
+            echo "waiting for npm tarball ($i/12)..."
+            sleep 6
+          done
+          SHA=$(shasum -a 256 /tmp/holt.tgz | awk '{print $1}')
+          echo "url=$URL"
+          echo "sha256=$SHA"
+          F=tap/Formula/holt.rb
+          sed -i -E "s#^  url \".*\"#  url \"${URL}\"#" "$F"
+          sed -i -E "s#^  sha256 \".*\"#  sha256 \"${SHA}\"#" "$F"
+          grep -E '  (url|sha256) ' "$F"
+
+      - name: Commit and push the formula bump
+        run: |
+          set -euo pipefail
+          cd tap
+          if git diff --quiet; then
+            echo "Formula already at ${VERSION}; nothing to push."
+            exit 0
+          fi
+          git config user.name "Debashis Nayak"
+          git config user.email "debashis.deb94@gmail.com"
+          git add Formula/holt.rb
+          git commit -m "holt ${VERSION}"
+          git push
