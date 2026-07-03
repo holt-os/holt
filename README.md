@@ -10,10 +10,23 @@ Holt is an open-source, self-hosted personal agent OS. Clone it, pick your skill
 
 ---
 
-## Quickstart
+## Install
+
+With Homebrew (installs Node for you, so you do not need npm first):
+
+```bash
+brew install holt-os/tap/holt
+```
+
+Or with npm, if you already have Node:
 
 ```bash
 npm install -g @holt-os/holt
+```
+
+## Quickstart
+
+```bash
 cd ~/where-you-want-to-work
 holt init      # trust this folder, choose and install brains, sign in, set defaults
 holt chat      # start talking (or use your custom command, e.g. `ai`)
