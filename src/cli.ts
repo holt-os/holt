@@ -11,8 +11,9 @@ import { login } from './commands/login';
 import { memoryCmd } from './commands/memory';
 import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
+import { mcp } from './commands/mcp';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -33,6 +34,7 @@ Commands:
   memory          Inspect memory: holt memory [search <query> | embed | clear]
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
+  mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
   setting         Configure brains, API brains, and your launch command (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
   version         Print the Holt version
@@ -82,6 +84,9 @@ async function main(): Promise<void> {
       break;
     case 'graph':
       await graph(process.argv.slice(3));
+      break;
+    case 'mcp':
+      await mcp(process.argv[3], process.argv.slice(4));
       break;
     default:
       console.log(`\n  Unknown command: "${cmd}"`);
