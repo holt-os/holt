@@ -3,6 +3,7 @@ import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type Br
 import { isInstalled, renderPrompt, runBrain, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
+import { extractAndSaveFacts } from '../facts';
 import { saveReply } from '../output';
 import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills';
 import { runSettings } from './setting';
@@ -72,7 +73,7 @@ export async function chat(): Promise<void> {
   const stats = memStats();
   console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${active.label}`));
   console.log(c.dim(
-    `Memory: ${stats.turns} moments from ${stats.sessions} session${stats.sessions === 1 ? '' : 's'} in this folder` +
+    `Memory: ${stats.turns} moments (${stats.facts} facts) from ${stats.sessions} session${stats.sessions === 1 ? '' : 's'} in this folder` +
     ` (recall: ${embedOk ? 'embeddings via local Ollama' : 'keyword match'}).`,
   ));
   if (embedOk && stats.withEmbeddings < stats.turns) {
@@ -111,7 +112,7 @@ export async function chat(): Promise<void> {
           else for (const h of hits) console.log(c.dim(`  ${(h.score).toFixed(2)}  (${h.turn.role}) ${h.turn.content.slice(0, 110).replace(/\s+/g, ' ')}`));
         } else {
           const s = memStats();
-          console.log(c.dim(`  ${s.turns} moments, ${s.sessions} sessions, ${s.withEmbeddings} embedded, ${(s.bytes / 1024).toFixed(1)} KB in ./.holt/memory/`));
+          console.log(c.dim(`  ${s.turns} moments, ${s.facts} facts, ${s.sessions} sessions, ${s.withEmbeddings} embedded, ${(s.bytes / 1024).toFixed(1)} KB in ./.holt/memory/`));
           console.log(c.dim('  usage: /memory <query> to preview recall, or "holt memory clear" to wipe.'));
         }
         continue;
@@ -224,6 +225,20 @@ export async function chat(): Promise<void> {
       appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'assistant', content: res.text, emb: (await embed(res.text)) ?? undefined });
     } else {
       console.log(c.red('\n  ' + res.text + '\n'));
+    }
+  }
+
+  // Distill durable facts from this session before leaving. Silent, best-effort,
+  // and never blocks exit: any failure is swallowed inside extractAndSaveFacts.
+  if (cfg.memory?.extractFacts !== false) {
+    try {
+      const arg = active.kind === 'cli'
+        ? { kind: 'cli' as const, id: active.id }
+        : { kind: 'api' as const, brain: active.brain };
+      const n = await extractAndSaveFacts(arg, cfg, history, session);
+      if (n > 0) console.log(c.dim(`  distilled ${n} fact${n === 1 ? '' : 's'} from this session.`));
+    } catch {
+      // never block exit on a memory step
     }
   }
 

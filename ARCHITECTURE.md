@@ -117,6 +117,8 @@ The mode is chosen per turn automatically: semantic where a vector exists, keywo
 
 **Why recall instead of unbounded replay.** Long conversations stay cheap. Only the last 12 turns are replayed verbatim; older context does not pile up in the prompt. Instead it comes back on demand through recall, so a chat started weeks ago still surfaces the one relevant thing you said without resending the entire history every turn.
 
+**Facts pipeline.** When a chat session ends (and after at least three exchanges), `extractAndSaveFacts()` in `src/facts.ts` makes one silent call to the active brain asking it to distill 1 to 5 durable facts as a JSON array. `parseFacts()` reads the reply tolerantly, then each new fact goes through `saveFact()` in `src/memory.ts`, which writes it two ways: a human-readable bullet under a dated heading in `<cwd>/.holt/memory/facts.md` (safe to hand-edit), and an embedded recall row in `turns.jsonl` with `role: 'fact'`. Duplicates (normalized exact match against existing fact rows and facts.md lines) are skipped. During recall, a fact that already clears its threshold gets a small score boost (1.15x) so distilled memory ranks slightly ahead of raw turns. The whole step is best-effort: it never blocks exit and swallows any error. Turn it off with the `memory.extractFacts` config flag. Inspect facts with `holt memory facts`.
+
 ## Launch alias
 
 `holt init` and `holt setting` can install a short launch word (like `ai`) that runs `holt chat`. `src/alias.ts` writes a fenced block into your shell rc:

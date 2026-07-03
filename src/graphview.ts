@@ -13,7 +13,7 @@ export interface GraphNode {
   kind: NodeKind;
   label: string;
   // turn-only
-  role?: 'user' | 'assistant';
+  role?: 'user' | 'assistant' | 'fact';
   session?: string;
   ts?: number;
   content?: string;
