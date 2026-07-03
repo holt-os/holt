@@ -5,16 +5,19 @@
  * is defensive: it returns friendly text on failure rather than throwing, so a
  * transient issue never surfaces as a protocol-level tool error.
  *
- * The '__mcp__' sentinel session is passed to recall/saveFact so that ALL
- * stored memory in the folder is searchable and writable (recall excludes only
- * the current session, so a sentinel that no real turn uses sees everything),
- * mirroring how src/commands/memory.ts uses '__none__'.
+ * Facts written via `remember` are stored under the '__mcp__' session so they
+ * group together. Recall must use a DIFFERENT read-only sentinel: recall()
+ * excludes the current session, so recalling under '__mcp__' would hide the
+ * very facts remember just wrote. '__mcp_recall__' is a session no turn is ever
+ * stored under, so recall sees everything (mirroring src/commands/memory.ts,
+ * which recalls under '__none__').
  */
 import type { McpTool } from './types';
 import { recall, saveFact, memStats } from '../memory';
 import { listSkills, loadSkill } from '../skills';
 
 const MCP_SESSION = '__mcp__';
+const MCP_RECALL_SESSION = '__mcp_recall__';
 
 export function holtTools(): McpTool[] {
   return [
@@ -35,7 +38,7 @@ export function holtTools(): McpTool[] {
           const query = String(args.query || '').trim();
           if (!query) return 'Provide a query to recall.';
           const k = Number(args.k) || 5;
-          const hits = await recall(query, MCP_SESSION, k);
+          const hits = await recall(query, MCP_RECALL_SESSION, k);
           if (hits.length === 0) return 'No relevant memory found.';
           const lines = hits.map(
             (h) => `${h.score.toFixed(2)}  (${h.turn.role})  ${h.turn.content.replace(/\s+/g, ' ').trim()}`,

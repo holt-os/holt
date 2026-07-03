@@ -98,13 +98,17 @@ export function appendTurn(t: MemTurn): void {
 
 export function clearMemory(): void {
   if (existsSync(memPath())) rmSync(memPath());
+  // Also remove the distilled facts file so stats, the facts view, and fact
+  // dedup all stay consistent. Leaving facts.md behind would keep showing old
+  // facts and would silently block those same facts from being re-stored.
+  if (existsSync(factsMdPath())) rmSync(factsMdPath());
 }
 
 // ---- facts ----
 
 /** Normalize a fact for exact-match dedup: lowercase, collapse whitespace, strip trailing punctuation. */
 function normalizeFact(s: string): string {
-  return s
+  return (s || '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
@@ -204,7 +208,7 @@ function cosine(a: number[], b: number[]): number {
 
 function tokens(s: string): Set<string> {
   return new Set(
-    s
+    (s || '')
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter((w) => w.length > 2),

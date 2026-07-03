@@ -44,7 +44,9 @@ export function loadTelegramConfig(): TelegramConfig | null {
   if (!existsSync(path)) return null;
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<TelegramConfig>;
-    if (typeof raw.token !== 'string' || typeof raw.allowedChatId !== 'number') return null;
+    // allowedChatId 0 is never a real Telegram chat id; reject it so a leftover
+    // setup sentinel from an older version never counts as "configured".
+    if (typeof raw.token !== 'string' || typeof raw.allowedChatId !== 'number' || raw.allowedChatId === 0) return null;
     return { token: raw.token, allowedChatId: raw.allowedChatId };
   } catch {
     return null;
@@ -129,13 +131,14 @@ export async function sendMessage(text: string, chatId?: number): Promise<boolea
 
 /**
  * Long-poll for updates from the given offset. Uses a 30s server-side timeout.
- * Returns the updates array, or [] on any error.
+ * Returns the updates array, or [] on any error. A tokenOverride lets setup poll
+ * with a not-yet-saved token, so no sentinel config has to be written to disk.
  */
-export async function getUpdates(offset: number): Promise<TgUpdate[]> {
-  const cfg = loadTelegramConfig();
-  if (!cfg) return [];
+export async function getUpdates(offset: number, tokenOverride?: string): Promise<TgUpdate[]> {
+  const token = tokenOverride ?? loadTelegramConfig()?.token;
+  if (!token) return [];
   const timeoutSec = 30;
-  const url = buildGetUpdatesUrl(cfg.token, offset, timeoutSec);
+  const url = buildGetUpdatesUrl(token, offset, timeoutSec);
   // Abort a bit after the server-side long-poll window so we do not hang forever.
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), (timeoutSec + 10) * 1000);

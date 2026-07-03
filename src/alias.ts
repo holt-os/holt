@@ -19,6 +19,7 @@ import {
   chmodSync,
   realpathSync,
 } from 'node:fs';
+import { isInstalled } from './brains';
 
 const START = '# >>> holt launch alias >>>';
 const END = '# <<< holt launch alias <<<';
@@ -110,8 +111,41 @@ function installRcAlias(name: string): AliasResult {
  * Install the launch command. Tries the executable-launcher route first (works
  * immediately), falls back to a shell rc alias (needs source or a new shell).
  */
+/**
+ * A launch command must be a single safe shell word: a letter or underscore,
+ * then letters, digits, underscores or hyphens. This is what stops arbitrary
+ * text (spaces, quotes, "$(...)") from being written into an rc file or used as
+ * a bin filename.
+ */
+export function isValidAliasName(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_-]{0,31}$/.test(name);
+}
+
 export function installAlias(name: string): AliasResult {
+  if (!isValidAliasName(name)) {
+    return {
+      ok: false,
+      kind: 'none',
+      file: '',
+      immediate: false,
+      message: `"${name}" is not a valid launch command. Use a single word: a letter or _ then letters, digits, _ or - (max 32).`,
+    };
+  }
+
   removeAlias(); // never leave two mechanisms behind
+
+  // Never shadow a real command already on PATH (our own shim, if any, was just
+  // removed above), matching this module's promise not to overwrite what is not
+  // ours. This catches commands living outside the launcher bin dir too.
+  if (process.platform !== 'win32' && isInstalled(name)) {
+    return {
+      ok: false,
+      kind: 'none',
+      file: '',
+      immediate: false,
+      message: `"${name}" is already a command on your PATH. Pick another word.`,
+    };
+  }
 
   if (process.platform !== 'win32') {
     const binDir = launcherBinDir();

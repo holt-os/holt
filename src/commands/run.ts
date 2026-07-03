@@ -84,6 +84,15 @@ export async function run(args: string[]): Promise<void> {
     onChunk: p.quiet ? undefined : (ch) => { streamed = true; process.stdout.write(ch); },
   });
 
+  // Failure: keep stdout clean (scripting/scheduled-job contract). The error
+  // goes to stderr only; do not echo result.text to stdout.
+  if (!result.ok) {
+    if (streamed) process.stdout.write('\n');
+    process.stderr.write(c.red(result.text) + '\n');
+    process.exitCode = 1;
+    return;
+  }
+
   if (!p.quiet && !streamed) {
     process.stdout.write(result.text);
   }
@@ -92,15 +101,14 @@ export async function run(args: string[]): Promise<void> {
     process.stdout.write('\n');
   }
 
-  if (!result.ok) {
-    process.stderr.write(c.red(result.text) + '\n');
-    process.exitCode = 1;
-    return;
-  }
-
   if (p.out) {
     const target = resolve(process.cwd(), p.out);
-    writeFileSync(target, result.text, 'utf8');
-    process.stderr.write(c.dim(`saved to ${target}`) + '\n');
+    try {
+      writeFileSync(target, result.text, 'utf8');
+      process.stderr.write(c.dim(`saved to ${target}`) + '\n');
+    } catch (e) {
+      process.stderr.write(c.red(`Could not write ${target}: ${(e as Error).message}`) + '\n');
+      process.exitCode = 1;
+    }
   }
 }

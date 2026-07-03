@@ -6,7 +6,12 @@ import { c } from '../ui';
 export async function login(which?: string): Promise<void> {
   const id = (which || '').toLowerCase() as BrainId;
   if (!(BRAIN_IDS as string[]).includes(id)) {
-    console.log(c.dim(`\n  Usage: holt login <${BRAIN_IDS.join('|')}>\n`));
+    if (which) {
+      console.error(`\n  Unknown brain "${which}". Use one of: ${BRAIN_IDS.join(', ')}\n`);
+      process.exitCode = 1;
+    } else {
+      console.log(c.dim(`\n  Usage: holt login <${BRAIN_IDS.join('|')}>\n`));
+    }
     return;
   }
   const s = BRAIN_SETUP[id];

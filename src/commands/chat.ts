@@ -166,15 +166,20 @@ export async function chat(): Promise<void> {
         const cliEnabled = BRAIN_IDS.filter((id) => (cfg as HoltConfig).brains[id].enabled) as string[];
         const apiIds = cfg.apiBrains.map((a) => a.id);
         const all = [...cliEnabled, ...apiIds];
-        if (arg && all.includes(arg)) {
-          const next = resolveActive(cfg, arg);
+        // Match case-insensitively but resolve to the real stored id: API brain
+        // ids are case-preserving, so lowercasing the arg alone would make a
+        // mixed-case brain unswitchable even though it is listed as available.
+        const rawArg = parts[1] || '';
+        const match = all.find((id) => id.toLowerCase() === rawArg.toLowerCase());
+        if (rawArg && match) {
+          const next = resolveActive(cfg, match);
           if (next) {
             active = next;
             const turns = Math.floor(history.length / 2);
             console.log(c.green(`  switched to ${active.label}. Context kept (${turns} turn${turns === 1 ? '' : 's'}).`));
           }
-        } else if (arg) {
-          console.log(c.dim(`  "${arg}" is not available. Available: ${all.join(', ') || 'none'}`));
+        } else if (rawArg) {
+          console.log(c.dim(`  "${rawArg}" is not available. Available: ${all.join(', ') || 'none'}`));
         } else {
           const cfgRef = cfg;
           const activeId = active.id;

@@ -133,7 +133,7 @@ function cmdList(): void {
 function cmdShow(name?: string): void {
   if (!name) { console.log(c.dim('\n  Usage: holt skill show <name>\n')); return; }
   const loaded = loadSkill(name);
-  if (!loaded) { console.log(c.dim(`\n  No skill named "${sanitizeName(name)}". Try "holt skill list".\n`)); return; }
+  if (!loaded) { console.error(c.dim(`\n  No skill named "${sanitizeName(name)}". Try "holt skill list".\n`)); process.exitCode = 1; return; }
   const { skill, body } = loaded;
   console.log('\n' + c.accent(skill.name) + c.dim(`  (${skill.scope})`));
   if (skill.description) console.log('  ' + skill.description);
@@ -149,8 +149,9 @@ function cmdCreate(name: string | undefined, global: boolean): void {
   const scope: SkillScope = global ? 'global' : 'workspace';
   const dir = join(skillsRoot(scope), clean);
   if (existsSync(dir)) {
-    console.log(c.red(`\n  A ${scope} skill named "${clean}" already exists.`));
-    console.log(c.dim('  ' + dir + '\n'));
+    console.error(c.red(`\n  A ${scope} skill named "${clean}" already exists.`));
+    console.error(c.dim('  ' + dir + '\n'));
+    process.exitCode = 1;
     return;
   }
   mkdirSync(dir, { recursive: true });
@@ -172,21 +173,24 @@ function cmdAdd(source: string | undefined, global: boolean): void {
       console.log(c.dim(`\n  Cloning ${source} ...`));
       const res = spawnSync('git', ['clone', '--depth', '1', source, tempDir], { stdio: 'ignore' });
       if (res.status !== 0) {
-        console.log(c.red('  Clone failed. Check the URL and that git is installed.\n'));
+        console.error(c.red('  Clone failed. Check the URL and that git is installed.\n'));
+        process.exitCode = 1;
         return;
       }
       fetched = tempDir;
     } else {
       fetched = resolve(source);
       if (!existsSync(fetched)) {
-        console.log(c.red(`\n  No such path: ${fetched}\n`));
+        console.error(c.red(`\n  No such path: ${fetched}\n`));
+        process.exitCode = 1;
         return;
       }
     }
 
     const skillDir = findSkillDir(fetched);
     if (!skillDir) {
-      console.log(c.red('\n  Could not find a SKILL.md at the source root or in a single subfolder.\n'));
+      console.error(c.red('\n  Could not find a SKILL.md at the source root or in a single subfolder.\n'));
+      process.exitCode = 1;
       return;
     }
 
@@ -199,12 +203,13 @@ function cmdAdd(source: string | undefined, global: boolean): void {
       skillName = '';
     }
     if (!skillName) skillName = sanitizeName(skillDir.split(/[\\/]/).pop() || '');
-    if (!skillName) { console.log(c.red('\n  Could not determine a valid skill name.\n')); return; }
+    if (!skillName) { console.error(c.red('\n  Could not determine a valid skill name.\n')); process.exitCode = 1; return; }
 
     const dest = join(skillsRoot(scope), skillName);
     if (existsSync(dest)) {
-      console.log(c.red(`\n  A ${scope} skill named "${skillName}" already exists.`));
-      console.log(c.dim('  ' + dest + '\n'));
+      console.error(c.red(`\n  A ${scope} skill named "${skillName}" already exists.`));
+      console.error(c.dim('  ' + dest + '\n'));
+      process.exitCode = 1;
       return;
     }
 
@@ -230,7 +235,7 @@ async function cmdRemove(name: string | undefined, ask: (q: string) => Promise<s
   const wsDir = join(skillsRoot('workspace'), clean);
   const globalDir = join(skillsRoot('global'), clean);
   const target = existsSync(wsDir) ? wsDir : existsSync(globalDir) ? globalDir : '';
-  if (!target) { console.log(c.dim(`\n  No skill named "${clean}" found.\n`)); return; }
+  if (!target) { console.error(c.dim(`\n  No skill named "${clean}" found.\n`)); process.exitCode = 1; return; }
   const scope = target === wsDir ? 'workspace' : 'global';
   const a = ((await ask(`\n  Delete ${scope} skill "${clean}"? [y/N] `)) ?? '').trim().toLowerCase();
   if (a === 'y' || a === 'yes') {
@@ -274,6 +279,7 @@ export async function skillCmd(sub?: string, rest: string[] = []): Promise<void>
         await cmdRemove(args[0], ask);
         break;
       default:
+        if (action) process.exitCode = 1; // an explicit but unknown subcommand is an error
         usage();
     }
   } finally {

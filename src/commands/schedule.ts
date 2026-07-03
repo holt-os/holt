@@ -96,12 +96,14 @@ async function addCmd(rest: string[]): Promise<void> {
   const { task, when, opts } = parseAdd(rest);
   if (!task || !when) {
     console.log(c.dim('\n  Usage: holt schedule add "<task>" <HH:MM> [--name <n>] [--notify] [--brain <id>]\n'));
+    process.exitCode = 1;
     return;
   }
   try {
     parseWhen(when);
   } catch (e) {
-    console.log('\n  ' + c.red((e as Error).message) + '\n');
+    console.error('\n  ' + c.red((e as Error).message) + '\n');
+    process.exitCode = 1;
     return;
   }
 
@@ -175,6 +177,7 @@ function removeCmd(rest: string[]): void {
   const id = rest[0];
   if (!id) {
     console.log(c.dim('\n  Usage: holt schedule remove <id>   (see ids with: holt schedule list)\n'));
+    process.exitCode = 1;
     return;
   }
   const before = loadJobs();
@@ -185,7 +188,10 @@ function removeCmd(rest: string[]): void {
   else if (process.platform === 'linux') removeLinux(id);
 
   if (existed) console.log('\n' + c.green(`  Removed schedule ${id}.`) + '\n');
-  else console.log(c.dim(`\n  No schedule with id ${id}. Nothing to remove.\n`));
+  else {
+    console.error(c.dim(`\n  No schedule with id ${id}. Nothing to remove.\n`));
+    process.exitCode = 1;
+  }
 }
 
 function usage(): void {
@@ -206,6 +212,7 @@ export async function schedule(sub?: string, rest: string[] = []): Promise<void>
     return;
   }
   if (action !== 'add' && action !== 'remove' && action !== 'rm') {
+    if (action) process.exitCode = 1; // an explicit but unknown subcommand is an error
     usage();
     return;
   }

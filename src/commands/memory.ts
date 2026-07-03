@@ -64,7 +64,15 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
     return;
   }
 
-  // default: stats
+  // An explicit but unrecognized subcommand is a typo, not a request for stats.
+  if (action && !['clear', 'embed', 'facts', 'search'].includes(action)) {
+    console.error(`\n  Unknown memory subcommand: "${sub}". Use: search <query> | facts | embed | clear\n`);
+    process.exitCode = 1;
+    close();
+    return;
+  }
+
+  // default (no subcommand): stats
   const s = memStats();
   const embedOk = await embeddingsAvailable();
   const sessions = new Set(loadTurns().map((t) => t.session)).size;

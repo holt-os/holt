@@ -16,8 +16,7 @@ import { run } from './commands/run';
 import { schedule } from './commands/schedule';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
-
-const VERSION = '0.8.2';
+import { VERSION } from './version';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -109,8 +108,8 @@ async function main(): Promise<void> {
       await notify(process.argv.slice(3));
       break;
     default:
-      console.log(`\n  Unknown command: "${cmd}"`);
-      console.log(`  Run "holt help" for usage.\n`);
+      console.error(`\n  Unknown command: "${cmd}"`);
+      console.error(`  Run "holt help" for usage.\n`);
       process.exitCode = 1;
   }
 }

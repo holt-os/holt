@@ -13,6 +13,7 @@
 import { runMcpServer } from '../mcp/server';
 import { holtTools } from '../mcp/tools';
 import { workspace, isTrusted, trustDir } from '../workspace';
+import { VERSION } from '../version';
 
 function printSetup(): void {
   const config = JSON.stringify(
@@ -42,13 +43,21 @@ export async function mcp(sub?: string, rest: string[] = []): Promise<void> {
     printSetup();
     return;
   }
+  // Only the bare `holt mcp` invocation serves. A mistyped subcommand (e.g.
+  // "setpu") must NOT silently start a long-running server and auto-trust the
+  // folder, so reject anything else.
+  if (sub !== undefined) {
+    console.error(`Unknown mcp subcommand: "${sub}". Use "holt mcp" to serve, or "holt mcp setup".`);
+    process.exitCode = 1;
+    return;
+  }
 
   try {
     // Non-interactive: stdin is the protocol channel, so we cannot prompt.
     // Auto-trust the launch folder instead of calling ensureTrusted/createReader.
     if (!isTrusted()) trustDir();
     console.error('Holt MCP: serving memory for ' + workspace());
-    await runMcpServer({ name: 'holt', version: '0.7.0', tools: holtTools() });
+    await runMcpServer({ name: 'holt', version: VERSION, tools: holtTools() });
   } catch (err) {
     console.error('Holt MCP failed: ' + (err instanceof Error ? err.message : String(err)));
     process.exitCode = 1;

@@ -62,10 +62,10 @@ export async function setupTelegram(ask: Ask): Promise<boolean> {
 
   let allowedChatId: number | null = null;
   if (mode === '' || mode === 'y' || mode === 'yes') {
-    // Save token temporarily so getUpdates can read it.
-    saveTelegramConfig({ token, allowedChatId: 0 });
+    // Poll with the not-yet-saved token directly, so a failed setup never
+    // leaves a bogus config behind (and never clobbers an existing one).
     console.log(c.dim('\n  Checking for a recent message...'));
-    const updates = await getUpdates(0);
+    const updates = await getUpdates(0, token);
     allowedChatId = latestChatId(updates);
     if (allowedChatId === null) {
       console.log(c.red('  Did not find a recent message.'));

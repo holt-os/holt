@@ -172,7 +172,9 @@ export function buildGraph(turns: MemTurn[]): Graph {
 function escapeForScript(json: string): string {
   // The JSON is already valid; the only sequence that can break out of a
   // <script> element is the literal "</script" (and by symmetry "<!--").
-  return json.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '<\\!--');
+  // "\/" is a valid JSON escape, but "\!" is NOT, so break the "<!--" token
+  // with a JSON-valid unicode escape for "!" (!) instead.
+  return json.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '<\\u0021--');
 }
 
 function escapeHtml(s: string): string {
@@ -294,7 +296,14 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
 <script>
 (function () {
   "use strict";
-  var DATA = JSON.parse(document.getElementById("graph-data").textContent);
+  var DATA;
+  try {
+    DATA = JSON.parse(document.getElementById("graph-data").textContent);
+  } catch (e) {
+    document.getElementById("empty").textContent = "Could not read the graph data.";
+    document.getElementById("empty").style.display = "flex";
+    return;
+  }
   var nodes = DATA.nodes || [];
   var edges = DATA.edges || [];
 
