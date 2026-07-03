@@ -127,6 +127,39 @@ holt skill remove <name>              delete a skill
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
 
+## Use Holt from your other tools (MCP)
+
+Holt can run as an [MCP](https://modelcontextprotocol.io) server, so Claude Code, Cursor, and Codex can recall and remember from Holt's memory for the folder without leaving those tools.
+
+```bash
+holt mcp        # run the MCP server for the current folder (talks JSON-RPC over stdio)
+holt mcp setup  # print the config snippets for each client
+```
+
+The server serves the memory of whatever folder it is launched in. Because MCP is non-interactive (stdin carries the protocol), it cannot prompt for trust, so it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. Startup logging goes to stderr; stdout is reserved for the protocol.
+
+Tools it exposes:
+
+- `recall` (`query`, optional `k`): search this folder's memory for relevant moments and facts.
+- `remember` (`content`): save a durable fact to this folder's memory.
+- `list_skills`: list the skills installed for this folder.
+- `get_skill` (`name`): get a skill's full instructions.
+- `memory_stats`: memory statistics for this folder.
+
+**Claude Code**
+
+```bash
+claude mcp add holt -- holt mcp
+```
+
+**Cursor / Codex** (JSON config):
+
+```json
+{ "mcpServers": { "holt": { "command": "holt", "args": ["mcp"] } } }
+```
+
+Point the client at the folder whose memory you want it to use; Holt serves whatever folder the server process starts in.
+
 ## Output format
 
 Replies print as markdown. `/output html` (or `markdown`) switches the save format and persists it. `/save [name]` writes the last reply to the current folder: `.md`, or a small self-contained dark-theme `.html` page.
@@ -137,6 +170,7 @@ Replies print as markdown. `/output html` (or `markdown`) switches the save form
 holt init            set up (trust, brains, sign-in, defaults) for this folder
 holt chat            start a session that remembers past ones
 holt graph           see your memory as an interactive knowledge graph
+holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup for config)
 holt skill           manage skills: list | show | create | add | remove
 holt memory          inspect memory: holt memory [search <query> | embed | clear]
 holt setting         configure brains, API brains, and launch command

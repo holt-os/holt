@@ -72,6 +72,12 @@ The one global file. It lists the absolute paths of folders you have trusted. Ho
 
 Remove a path here to un-trust that folder; Holt will ask again next time you run a command there.
 
+## MCP server: `holt mcp`
+
+`holt mcp` runs Holt as an [MCP](https://modelcontextprotocol.io) server over stdio, so other tools (Claude Code, Cursor, Codex) can use this folder's memory. It exposes five tools: `recall`, `remember`, `list_skills`, `get_skill`, and `memory_stats`. Run `holt mcp setup` to print the client config snippets.
+
+The server operates on the folder its process starts in, exactly like `holt chat`. MCP is non-interactive (stdin carries the JSON-RPC protocol), so it cannot prompt for trust: it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. In server mode stdout is the protocol channel; any log line goes to stderr instead.
+
 ## Memory files: `<folder>/.holt/memory/turns.jsonl`
 
 Per-folder conversation memory, append-only, one JSON object per line:
