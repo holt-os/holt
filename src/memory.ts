@@ -6,7 +6,7 @@
 import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { wsHoltDir } from './workspace';
+import { wsHoltDir, workspace, GLOBAL_DIR } from './workspace';
 
 export interface MemTurn {
   id: string;
@@ -15,6 +15,12 @@ export interface MemTurn {
   role: 'user' | 'assistant' | 'fact';
   content: string;
   emb?: number[];
+}
+
+/** A global-store row: a promoted fact plus the folder it came from. */
+export interface GlobalFact extends MemTurn {
+  /** Absolute path of the workspace this fact was promoted from. */
+  workspace: string;
 }
 
 const OLLAMA_URL = process.env.HOLT_OLLAMA_URL || 'http://127.0.0.1:11434';
@@ -94,6 +100,17 @@ export function loadTurns(): MemTurn[] {
 export function appendTurn(t: MemTurn): void {
   mkdirSync(memDir(), { recursive: true });
   appendFileSync(memPath(), JSON.stringify(t) + '\n', 'utf8');
+  // If this folder opted into global memory, mirror distilled facts (role:'fact',
+  // which includes wiki page rows) to the shared store, tagged with this folder.
+  // Never let a global-store hiccup break the local write.
+  if (t.role === 'fact') {
+    try {
+      const ws = workspace();
+      if (isGlobalEnabled(ws)) appendGlobalFact(t, ws);
+    } catch {
+      // global promotion is best-effort; local memory is the source of truth
+    }
+  }
 }
 
 export function clearMemory(): void {
@@ -107,7 +124,7 @@ export function clearMemory(): void {
 // ---- facts ----
 
 /** Normalize a fact for exact-match dedup: lowercase, collapse whitespace, strip trailing punctuation. */
-function normalizeFact(s: string): string {
+export function normalizeFact(s: string): string {
   return (s || '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
@@ -189,6 +206,162 @@ export function memStats(): MemStats {
   return { turns: turns.length, facts, sessions, withEmbeddings, bytes };
 }
 
+// ---- global store (opt-in, AIOS-style single store tagged by workspace) ----
+//
+// Per-folder memory stays the default and the source of truth. A folder can opt
+// in with `holt memory global on`; opting in both CONTRIBUTES its distilled
+// facts to a shared store and READS that store during recall (excluding its own
+// rows, which are already local). State lives in ~/.holt/memory-scopes.json; the
+// store lives at ~/.holt/global/turns.jsonl. Nothing here changes behavior for a
+// folder that never opts in.
+
+export function globalMemDir(): string {
+  return join(GLOBAL_DIR, 'global');
+}
+export function globalMemPath(): string {
+  return join(globalMemDir(), 'turns.jsonl');
+}
+export function memoryScopesPath(): string {
+  return join(GLOBAL_DIR, 'memory-scopes.json');
+}
+
+interface ScopesFile {
+  enabled: string[];
+}
+
+function readScopes(): ScopesFile {
+  try {
+    const raw = JSON.parse(readFileSync(memoryScopesPath(), 'utf8')) as Partial<ScopesFile>;
+    return { enabled: Array.isArray(raw.enabled) ? raw.enabled.filter((s) => typeof s === 'string') : [] };
+  } catch {
+    return { enabled: [] };
+  }
+}
+
+function writeScopes(s: ScopesFile): void {
+  mkdirSync(GLOBAL_DIR, { recursive: true });
+  writeFileSync(memoryScopesPath(), JSON.stringify({ enabled: s.enabled }, null, 2) + '\n', 'utf8');
+}
+
+/** Is the given workspace opted into global memory (contribute + read)? */
+export function isGlobalEnabled(ws: string = workspace()): boolean {
+  try {
+    return readScopes().enabled.includes(ws);
+  } catch {
+    return false;
+  }
+}
+
+/** Absolute paths of all folders currently contributing to / reading the global store. */
+export function globalWorkspaces(): string[] {
+  return readScopes().enabled.slice();
+}
+
+/** Load every row from the global store. Corrupt/missing store degrades to []. */
+export function loadGlobalFacts(): GlobalFact[] {
+  try {
+    if (!existsSync(globalMemPath())) return [];
+    const out: GlobalFact[] = [];
+    for (const line of readFileSync(globalMemPath(), 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line) as GlobalFact;
+        if (row && typeof row.content === 'string' && typeof row.workspace === 'string') out.push(row);
+      } catch {
+        // skip corrupt lines rather than losing the whole store
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Append a fact to the global store tagged with its workspace. Dedups by
+ * (normalized content + workspace) so re-saves and re-syncs never pile up.
+ * Never throws. Returns true when a new row was written.
+ */
+export function appendGlobalFact(t: MemTurn, ws: string): boolean {
+  try {
+    const norm = normalizeFact(t.content);
+    for (const g of loadGlobalFacts()) {
+      if (g.workspace === ws && normalizeFact(g.content) === norm) return false;
+    }
+    mkdirSync(globalMemDir(), { recursive: true });
+    const row: GlobalFact = {
+      id: t.id,
+      ts: t.ts,
+      session: t.session,
+      role: 'fact',
+      content: t.content,
+      workspace: ws,
+      ...(Array.isArray(t.emb) ? { emb: t.emb } : {}),
+    };
+    appendFileSync(globalMemPath(), JSON.stringify(row) + '\n', 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Enable global memory for a folder and backfill its existing facts into the store. Returns rows backfilled. */
+export function enableGlobal(ws: string = workspace()): number {
+  const s = readScopes();
+  if (!s.enabled.includes(ws)) {
+    s.enabled.push(ws);
+    writeScopes(s);
+  }
+  // Backfill existing local fact rows (dedup handles the already-present ones).
+  let added = 0;
+  for (const t of loadTurns()) {
+    if (t.role === 'fact' && appendGlobalFact(t, ws)) added++;
+  }
+  return added;
+}
+
+/**
+ * Disable global memory for a folder. With purge, also drop this folder's rows
+ * from the shared store. Returns { purged } row count removed (0 unless purge).
+ */
+export function disableGlobal(ws: string = workspace(), purge = false): { purged: number } {
+  const s = readScopes();
+  const next = s.enabled.filter((w) => w !== ws);
+  if (next.length !== s.enabled.length) writeScopes({ enabled: next });
+
+  if (!purge) return { purged: 0 };
+  try {
+    const all = loadGlobalFacts();
+    const kept = all.filter((g) => g.workspace !== ws);
+    const purged = all.length - kept.length;
+    if (purged > 0) {
+      mkdirSync(globalMemDir(), { recursive: true });
+      writeFileSync(globalMemPath(), kept.map((g) => JSON.stringify(g)).join('\n') + (kept.length ? '\n' : ''), 'utf8');
+    }
+    return { purged };
+  } catch {
+    return { purged: 0 };
+  }
+}
+
+export interface GlobalStats {
+  facts: number;
+  workspaces: number;
+  bytes: number;
+}
+
+export function globalStats(): GlobalStats {
+  const rows = loadGlobalFacts();
+  const workspaces = new Set(rows.map((r) => r.workspace)).size;
+  let bytes = 0;
+  try {
+    bytes = existsSync(globalMemPath()) ? statSync(globalMemPath()).size : 0;
+  } catch {
+    bytes = 0;
+  }
+  return { facts: rows.length, workspaces, bytes };
+}
+
 // ---- recall ----
 
 function cosine(a: number[], b: number[]): number {
@@ -226,31 +399,72 @@ function keywordScore(q: Set<string>, text: string): number {
 export interface Recalled {
   turn: MemTurn;
   score: number;
+  /**
+   * Absolute path of the folder a global-store hit came from. Absent for local
+   * hits (which belong to the current folder). Additive: existing consumers can
+   * ignore it. When present, the hit was recalled from the shared global store.
+   */
+  workspace?: string;
 }
 
 /** Distilled facts rank slightly higher than raw turns once above threshold. */
 const FACT_BOOST = 1.15;
 
-/** Top-k relevant turns from PAST sessions (never the current one). */
+/** Score one row against the query, returning null if it fails the threshold. */
+function scoreRow(
+  content: string,
+  emb: number[] | undefined,
+  role: MemTurn['role'],
+  qEmb: number[] | null,
+  qTok: Set<string>,
+): number | null {
+  const useEmb = qEmb && Array.isArray(emb);
+  let score = useEmb ? cosine(qEmb, emb as number[]) : keywordScore(qTok, content);
+  if (score > (useEmb ? 0.35 : 0.15)) {
+    // Boost only after passing the threshold, so a weak fact never sneaks through.
+    if (role === 'fact') score *= FACT_BOOST;
+    return score;
+  }
+  return null;
+}
+
+/**
+ * Top-k relevant turns from PAST sessions (never the current one).
+ *
+ * For a folder opted into global memory, also scores the shared global store
+ * (excluding this folder's own rows, which are already local) and merges the
+ * results, tagging each global hit with its source workspace. A missing or
+ * corrupt global store degrades to local-only recall.
+ */
 export async function recall(query: string, currentSession: string, k = 4): Promise<Recalled[]> {
+  const ws = workspace();
   const past = loadTurns().filter((t) => t.session !== currentSession);
-  if (past.length === 0) return [];
 
   const qEmb = await embed(query);
   const qTok = tokens(query);
   const scored: Recalled[] = [];
 
   for (const turn of past) {
-    let score = 0;
-    if (qEmb && Array.isArray(turn.emb)) score = cosine(qEmb, turn.emb);
-    else score = keywordScore(qTok, turn.content);
-    if (score > (qEmb && Array.isArray(turn.emb) ? 0.35 : 0.15)) {
-      // Boost only after passing the threshold, so a weak fact never sneaks through.
-      if (turn.role === 'fact') score *= FACT_BOOST;
-      scored.push({ turn, score });
+    const score = scoreRow(turn.content, turn.emb, turn.role, qEmb, qTok);
+    if (score !== null) scored.push({ turn, score });
+  }
+
+  if (isGlobalEnabled(ws)) {
+    for (const g of loadGlobalFacts()) {
+      // Skip our own rows: they are already scored above from local memory.
+      if (g.workspace === ws) continue;
+      const score = scoreRow(g.content, g.emb, g.role, qEmb, qTok);
+      if (score !== null) {
+        scored.push({
+          turn: { id: g.id, ts: g.ts, session: g.session, role: g.role, content: g.content, emb: g.emb },
+          score,
+          workspace: g.workspace,
+        });
+      }
     }
   }
 
+  if (scored.length === 0) return [];
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, k);
 }

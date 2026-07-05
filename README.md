@@ -90,12 +90,37 @@ holt memory                    # stats for this folder
 holt memory facts              # show the distilled facts (facts.md)
 holt memory search <query>     # find remembered moments
 holt memory embed              # embed older moments for semantic recall
+holt memory global             # share high-value facts across your folders
 holt memory clear              # wipe this folder's memory
 ```
 
 Turns saved before semantic memory was enabled are upgraded in one pass with `holt memory embed`.
 
 Long conversations stay cheap: only recent turns are replayed verbatim, older context comes back through recall.
+
+### Optional global memory (`holt memory global`)
+
+By default every folder's memory is **isolated**: recall never crosses folders. If you want a folder to draw on what you learned elsewhere, opt it into a shared store:
+
+```bash
+holt memory global on          # this folder now contributes + reads shared facts
+holt memory global status      # who is sharing, and global store stats
+holt memory global off         # stop sharing + reading (recall goes local-only)
+holt memory global off --purge # also delete this folder's rows from the store
+```
+
+What opting in does:
+
+- **Facts only.** Only distilled facts (the `fact` rows, which includes wiki pages) are promoted, never raw turns. Each promoted fact is **tagged with the absolute path of the folder it came from**, so you always know its origin.
+- **One switch = contribute + read.** An opted-in folder both pushes its facts to the shared store and, during recall, also scores the shared store and merges the hits, so `holt memory search` and chat recall surface knowledge from your *other* opted-in folders. Your own folder's rows are excluded from the global read (they are already in local memory, so there is no double counting). Global hits are shown tagged with their source folder.
+- **`on` backfills** the folder's existing facts, then new facts mirror automatically. Saving the same fact twice does not duplicate it (dedup by normalized content + folder).
+
+Everything lives outside your projects, so a folder that never opts in is completely unaffected:
+
+- **Store:** `~/.holt/global/turns.jsonl`, one row per promoted fact plus a `workspace` field.
+- **Registry:** `~/.holt/memory-scopes.json`, shape `{ "enabled": ["<abs folder path>", ...] }`. This is the whole list of folders that participate. Per-folder `config.json` is not touched.
+
+A missing or corrupt global store degrades silently to local-only recall. Per-folder isolation stays the default.
 
 ## Brains
 

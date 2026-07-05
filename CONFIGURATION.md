@@ -201,6 +201,27 @@ Per-folder conversation memory, append-only, one JSON object per line:
 
 Distilled facts also live in a human-editable companion file, `<folder>/.holt/memory/facts.md`, one dated `##` heading with `- ` bullets. It is written alongside the `fact` rows when a session ends, and is safe to edit by hand. View it with `holt memory facts`. Disable distillation with the `memory.extractFacts` config flag.
 
+## Optional global memory: `~/.holt/global/turns.jsonl` + `~/.holt/memory-scopes.json`
+
+Per-folder isolation is the **default**: recall never crosses folders. A folder can opt into an AIOS-style shared store where high-value facts are pooled and tagged by the folder they came from. This is controlled entirely outside the per-folder `config.json` (which is left unchanged), by two global files:
+
+- **Registry: `~/.holt/memory-scopes.json`**, shape `{ "enabled": ["<abs folder path>", ...] }`. A folder listed here both **contributes** its distilled facts to the shared store and **reads** the shared store during recall. This one list is the source of truth for which folders participate.
+- **Store: `~/.holt/global/turns.jsonl`**, append-only, one JSON object per line. Each row is a memory `fact` row plus a `workspace` field:
+
+  ```json
+  {"id":"a1b2c3d4","ts":1719878400000,"session":"seed","role":"fact","content":"A uses Postgres","workspace":"/Users/you/projects/a","emb":[0.01,-0.04]}
+  ```
+
+Only distilled `fact` rows are promoted (this includes wiki page rows); raw user/assistant turns are never mirrored. Rows are deduped by normalized content plus workspace, so re-saves and re-syncs never pile up. Embeddings carry over from the local row, so global recall stays semantic when Ollama is available.
+
+Manage it with `holt memory global`:
+
+- `holt memory global on`: add this folder to the registry, backfill its existing facts into the store, and mirror new ones automatically.
+- `holt memory global off`: remove this folder from the registry (stops contributing and reading). Add `--purge` to also delete this folder's rows from the store; without it, they are left in place.
+- `holt memory global status` (or bare `holt memory global`): whether this folder is enabled, how many folders contribute, and store stats.
+
+During recall in an enabled folder, the shared store is scored with the same embedding/keyword logic and fact boost and merged with local results; the folder's own rows are excluded from the global read to avoid double counting, and each global hit is tagged with its source folder. A missing or corrupt store degrades silently to local-only recall. Delete `~/.holt/global/` and `~/.holt/memory-scopes.json` to reset global memory entirely.
+
 ## Wiki files: `<folder>/.holt/wiki/`
 
 The derived knowledge wiki (`holt wiki`). One flat folder of Obsidian-compatible Markdown:
