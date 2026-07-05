@@ -16,6 +16,8 @@ import { run } from './commands/run';
 import { schedule } from './commands/schedule';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
+import { voice } from './commands/voice';
+import { write } from './commands/write';
 import { VERSION } from './version';
 
 const BANNER = `
@@ -38,6 +40,8 @@ Commands:
   schedule        Fire "holt run" on a timer: holt schedule [add | list | remove]
   telegram        Chat with Holt from your phone: holt telegram [setup]
   notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
+  voice           Teach Holt how you write: holt voice [add <file> | show | edit | clear]
+  write <what>    Draft content in your voice, with anti-AI checks: holt write "..." [--type]
   memory          Inspect memory: holt memory [search <query> | embed | clear]
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
@@ -106,6 +110,12 @@ async function main(): Promise<void> {
       break;
     case 'notify':
       await notify(process.argv.slice(3));
+      break;
+    case 'voice':
+      await voice(process.argv[3], process.argv.slice(4));
+      break;
+    case 'write':
+      await write(process.argv.slice(3));
       break;
     default:
       console.error(`\n  Unknown command: "${cmd}"`);
