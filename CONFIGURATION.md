@@ -124,6 +124,23 @@ A routine with a `when` also owns an entry in `~/.holt/schedules.json` (the same
 
 `holt routine add <name> --template <t>` scaffolds a routine from a small built-in map (`daily-brief`, `standup`), each a sensible task + daily schedule + notify default you can then edit.
 
+## Machine check: `holt doctor`
+
+`holt doctor` inspects this machine and recommends how best to run Holt on it. It is read-only: it writes no files, needs no trust, reads no keys, and always exits `0` even when a probe fails (any field it cannot read prints `unknown`).
+
+It reports six sections: **Machine** (platform, CPU, RAM, Node), **Brains** (which of `claude`/`codex`/`gemini` are installed, plus any API brains configured in this folder's `config.json`), **Semantic memory** (whether a local Ollama with the embed model is reachable), **Knowledge wiki maintainer** (`brain` versus a RAM-sized local model), **Always-on / Telegram** (whether a bot config exists at `~/.holt/telegram.json`), and **Recommended next steps** (a checklist built from the gaps found).
+
+The RAM-to-model mapping is defined once in `src/specs.ts` as `LOCAL_MODEL_RECS` and read via `recommendLocalModel(totalRamGB)`:
+
+| RAM      | Local wiki model            | Footprint  | Guidance                                                        |
+|----------|-----------------------------|------------|----------------------------------------------------------------|
+| < 16 GB  | `llama3.2:3b` (discouraged) | ~2GB       | Local is modest; prefer the hosted `brain` maintainer.         |
+| 16 GB    | `qwen2.5:7b` (or `llama3.1:8b`) | ~4.7GB  | Works but tight; prefer your always-on machine.                |
+| 24-32 GB | `qwen2.5:14b`               | ~9GB       | Fits well, a solid local maintainer.                           |
+| >= 48 GB | `qwen2.5:32b`               | ~20GB      | Best local quality.                                            |
+
+The wiki maintainer feature reads this same table, so tune models in `src/specs.ts` only. The Ollama base URL and embed model name it probes honor `HOLT_OLLAMA_URL` and `HOLT_EMBED_MODEL` (see below).
+
 ## Memory files: `<folder>/.holt/memory/turns.jsonl`
 
 Per-folder conversation memory, append-only, one JSON object per line:
