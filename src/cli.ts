@@ -12,6 +12,7 @@ import { memoryCmd } from './commands/memory';
 import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
 import { mcp } from './commands/mcp';
+import { hook } from './commands/hook';
 import { run } from './commands/run';
 import { schedule } from './commands/schedule';
 import { telegram } from './commands/telegram';
@@ -42,6 +43,7 @@ Commands:
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
   mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
+  hook            Ambient memory for Claude Code: holt hook [install | remove | status]
   setting         Configure brains, API brains, and your launch command (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
   version         Print the Holt version
@@ -94,6 +96,9 @@ async function main(): Promise<void> {
       break;
     case 'mcp':
       await mcp(process.argv[3], process.argv.slice(4));
+      break;
+    case 'hook':
+      await hook(process.argv[3], process.argv.slice(4));
       break;
     case 'run':
       await run(process.argv.slice(3));
