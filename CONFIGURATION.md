@@ -65,6 +65,44 @@ To point a brain at a different CLI or add flags, edit `command` / `args`. See t
 
 Written only when you paste a raw key while connecting an API brain. One optional key per provider (`anthropic`, `openai`, `gemini`), file mode `600`. Prefer env vars if you rotate keys often; delete the file to forget every stored key.
 
+## Writing voice profile: `~/.holt/voice.json`
+
+Your writing voice, built by `holt voice` and used by `holt write`. It is **global to you**, not per folder, so the same voice follows you everywhere. File mode `600`, because it can hold excerpts of your own writing. It is a plain JSON file you can hand edit; after changing `answers` or `samples`, run `holt voice` to re-synthesize the `style`.
+
+Privacy is a hard rule: the interview only ever asks about writing and communication style, never personal details. Samples are stored as a hash and length by default; an excerpt is kept only if you consent when adding it.
+
+```json
+{
+  "version": 1,
+  "depth": "quick",
+  "answers": [
+    { "key": "tone", "question": "What tone...", "answer": "casual and dry" }
+  ],
+  "samples": [
+    { "source": "file:/path/to/note.md", "hash": "a1b2c3d4e5f6a7b8", "length": 812, "excerpt": "...", "storedFull": true, "addedAt": 1719878400000 }
+  ],
+  "style": {
+    "tone": "casual, dry",
+    "formality": 2,
+    "avgSentenceLength": "short",
+    "person": "first",
+    "emoji": "rare",
+    "formatting": "short paragraphs, no headers",
+    "signatureMoves": ["opens with a concrete moment"],
+    "bannedWords": ["leverage", "synergy"],
+    "targetAudiences": ["builders", "peers"],
+    "soundsLike": "a smart friend over coffee",
+    "doesNotSoundLike": "a press release"
+  },
+  "synthesizedAt": 1719878400000
+}
+```
+
+- `answers` are the raw interview responses (style only). `samples` reference writing you shared; `excerpt` is present only with your consent.
+- `style` is synthesized by your configured brain from the answers and samples. If no brain is set, the raw answers are saved and a `synthesisNote` explains that the profile builds once a brain is configured.
+- `holt write` composes `style` (plus any stored excerpts) with a generic anti-AI rubric and your request, then runs your default brain. A second self-check pass fixes any tells unless you pass `--fast`. Generated output is always em-dash free.
+- Remove the profile with `holt voice clear` (the file is overwritten then deleted so no excerpt lingers).
+
 ## Global trust list: `~/.holt/trust.json`
 
 The one global file. It lists the absolute paths of folders you have trusted. Holt refuses to read or write in a folder that is not in this list until you approve it.

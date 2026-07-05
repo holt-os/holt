@@ -7,6 +7,7 @@ import { embeddingsAvailable, resetEmbedProbe, EMBED_MODEL } from '../memory';
 import { loadTelegramConfig } from '../telegram';
 import { connectApiBrain } from './setting';
 import { setupTelegram } from './telegram';
+import { voiceInterview } from './voice';
 import { c, createReader } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
@@ -163,5 +164,16 @@ export async function init(): Promise<void> {
     }
   } else {
     console.log(c.dim('No brain is ready yet. Install one, then run "holt init" again.\n'));
+  }
+
+  // Optional: teach Holt how you write, so it can draft in your voice. Additive
+  // and opt-in. A fresh reader since the setup reader was closed for installs.
+  const voiceReader = createReader();
+  const voiceAns = ((await voiceReader.ask('Want Holt to learn how you write, so it can draft in your voice? [y/N] ')) ?? '').trim().toLowerCase();
+  voiceReader.close();
+  if (voiceAns === 'y' || voiceAns === 'yes') {
+    await voiceInterview();
+  } else {
+    console.log(c.dim('  Skipped. Run "holt voice" anytime to set up your writing voice.\n'));
   }
 }

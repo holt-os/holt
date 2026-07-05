@@ -20,6 +20,8 @@ import { routine } from './commands/routine';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
 import { doctor } from './commands/doctor';
+import { voice } from './commands/voice';
+import { write } from './commands/write';
 import { VERSION } from './version';
 
 const BANNER = `
@@ -43,6 +45,8 @@ Commands:
   routine         Named, reusable, scheduled jobs: holt routine [add | run | list | remove]
   telegram        Chat with Holt from your phone: holt telegram [setup]
   notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
+  voice           Teach Holt how you write: holt voice [add <file> | show | edit | clear]
+  write <what>    Draft content in your voice, with anti-AI checks: holt write "..." [--type]
   memory          Inspect memory: holt memory [search <query> | embed | clear]
   wiki            Your derived knowledge wiki: holt wiki [sync | rebuild | lint | list | show]
   graph           See your memory as an interactive knowledge graph in the browser
@@ -126,6 +130,12 @@ async function main(): Promise<void> {
       break;
     case 'doctor':
       await doctor();
+      break;
+    case 'voice':
+      await voice(process.argv[3], process.argv.slice(4));
+      break;
+    case 'write':
+      await write(process.argv.slice(3));
       break;
     default:
       console.error(`\n  Unknown command: "${cmd}"`);

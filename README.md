@@ -323,6 +323,46 @@ It is read-only advice: it changes nothing, needs no trust, and always exits cle
 
 The RAM-to-model table lives in `src/specs.ts` (`LOCAL_MODEL_RECS` / `recommendLocalModel`), the single source of truth the wiki maintainer reads too.
 
+## Your writing voice (`holt voice` + `holt write`)
+
+Holt can learn how *you* write, then draft in that voice while steering clear of the patterns that make text read as machine written.
+
+### Teach it your voice: `holt voice`
+
+At the end of `holt init` you are offered a short optional interview. You can also run or redo it anytime:
+
+```bash
+holt voice            # run the interview, or add samples, or both
+holt voice add <file> # learn from a writing sample you already have
+holt voice show       # print your profile
+holt voice edit       # show where the profile lives (it is a plain JSON file)
+holt voice clear      # remove it
+```
+
+The interview asks you to pick a **depth** up front: `quick` (a few questions) or `detailed` (more). Questions are about **writing and communication style only**: tone, sentence length, first vs third person, emoji habits, words you love or ban, who you write for, and what you want to sound like and not sound like.
+
+Privacy is a hard rule. The interview never asks for personal details (no name, job, location, or life story). If you happen to mention something personal in an answer, Holt stores only what you typed and never asks follow ups.
+
+You can also feed it real writing. `holt voice add <file>` reads a file; inside the interview you can paste a sample instead. Samples are stored as a hash and length by default; an excerpt is kept only if you say yes, so Holt can match your rhythm directly.
+
+From the answers and samples, Holt asks your configured brain to build a **style profile**: tone, formality (1 to 5), average sentence length, person, emoji and formatting habits, signature moves, banned words, target audiences, and a short "sounds like / does not sound like" summary. If no brain is set yet, your raw answers are saved and the profile synthesizes the next time you run `holt voice` with a brain configured.
+
+The profile lives at `~/.holt/voice.json` (mode 600, since it can hold writing excerpts). It is global to you, not per folder, and you can hand edit it.
+
+### Draft in your voice: `holt write`
+
+```bash
+holt write "a linkedin post about shipping Holt" --type linkedin
+holt write "a reply to a customer asking for a refund" --type email --out reply.txt
+holt write "a short post about testing" --fast
+```
+
+`holt write` composes three things into one prompt: your voice profile, a built in **anti-AI rubric**, and your request. Then it runs your default brain. `--type` shapes length and format (`linkedin`, `email`, `tweet`, `blog`, `generic`), `--out` also writes the draft to a file, and `--brain <id>` picks a brain.
+
+By default a second pass checks the draft against the rubric and fixes any tells; `--fast` skips it for a single call. The anti-AI rubric bans em-dashes, "rule of three" cliches, "in today's fast-paced world" openers, "it is not X, it is Y" reframes, tidy bow-tie conclusions, uniform sentence rhythm, hedging filler, corporate buzzwords, and emoji unless your profile allows them. The output is always em-dash free.
+
+With no profile yet, `holt write` still works using a plain, natural voice.
+
 ## Commands
 
 ```
@@ -334,6 +374,8 @@ holt routine         named, reusable, scheduled jobs: add | run | list | show | 
 holt telegram        chat with Holt from your phone: telegram [setup]
 holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
 holt doctor          check this machine and recommend how best to run Holt here
+holt voice           teach Holt your writing voice: add <file> | show | edit | clear
+holt write <what>    draft content in your voice with anti-AI checks (--type, --out, --fast)
 holt graph           see your memory as an interactive knowledge graph
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt hook            ambient memory for Claude Code: install | remove | status
