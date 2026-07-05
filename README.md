@@ -122,7 +122,39 @@ A brain can also be a direct provider connection: no CLI install, your own key. 
 - Turns that mean similar things (when local embeddings exist) get a strong link.
 - Drag to pan, scroll to zoom, click a turn to read it in full, click a concept to light up its turns, and search to highlight matching memory live.
 
-Options: `--out <path>` to write elsewhere, `--no-open` to skip the browser.
+Options: `--out <path>` to write elsewhere, `--no-open` to skip the browser. When a wiki exists (see below), the graph auto-includes wiki pages as green nodes wired by their `[[links]]`; force it on or off with `--wiki` / `--no-wiki`. This is the graph as a view over your wiki.
+
+## Knowledge wiki: `holt wiki`
+
+Memory has three layers, each derived from the one below it:
+
+1. **Raw turns** (`turns.jsonl`): every exchange, append-only, authoritative.
+2. **Facts** (`facts.md`): 1 to 5 durable facts distilled per session.
+3. **Wiki** (`.holt/wiki/`): a cross-linked set of Markdown pages, synthesized and maintained by an LLM. This is the "kept and connected" layer.
+
+The core rule: **wiki pages are derived and regenerable, never a sole source of truth.** Turns and facts stay authoritative. Every page records which fact ids it drew from (frontmatter `sources:`), so `holt wiki rebuild` can regenerate the whole wiki from scratch. A bad synthesis is therefore never lossy: rebuild recovers it. Pages are plain Obsidian-compatible Markdown with `[[wikilinks]]` and an `index.md`, so you can point Obsidian at `.holt/wiki` as a vault, or edit pages by hand (a rebuild will overwrite hand-edits, so keep the folder under git if you edit).
+
+```bash
+holt wiki                     # status: maintainer, model, page count, last sync, RAM hint
+holt wiki sync                # fold new facts into pages (route + merge)
+holt wiki rebuild             # wipe and regenerate every page from facts (asks first)
+holt wiki lint                # audit pages for contradictions, duplicates, gaps
+holt wiki list                # list pages (title, updated, size)
+holt wiki show <page>         # print one page
+holt wiki open                # open the wiki in your default app (Obsidian reads it natively)
+holt wiki setup               # recommend a local model for this machine's RAM
+```
+
+**How sync works.** `holt wiki sync` gathers facts added since the last sync (a marker in `.holt/wiki/.state.json`), embeds each one locally, and routes it to the nearest existing page by cosine similarity. Related facts land on the same page; a fact that matches nothing new starts a fresh page. Facts are grouped by target page and the maintainer is called **once per changed page** (not once per fact), so it only rewrites the few pages that actually changed. Routing is always local and free, which is what keeps the maintainer's cost minimal. `holt wiki rebuild` folds every fact from scratch; `holt wiki lint` reports issues but does not rewrite (propose-only).
+
+**Who maintains it (the key knob).** Synthesis is a reasoning task, and you choose who does it with `wiki.maintainer`:
+
+- `brain` (default): the folder's configured brain, exactly like fact distillation. When the brain is the Claude Code CLI this rides your existing Claude plan, so there are no marginal dollars per sync.
+- `local`: a local generative model via Ollama (set `wiki.localModel`, default `qwen2.5:7b`). Free and offline, lower quality, and it trades dollars for RAM. If the model is not pulled, Holt prints the exact `ollama pull` line and falls back to the brain rather than failing.
+
+`holt wiki setup` (or the hint in `holt wiki status`) reads your total RAM and recommends a model: under 16 GB it discourages local (use the brain); 16 GB suggests `qwen2.5:7b` (tight alongside the embed model, an always-on machine is a better host); 24 to 32 GB suggests `qwen2.5:14b`; 48 GB and up suggests `qwen2.5:32b`.
+
+Wiki pages also participate in recall: each page is embedded and indexed like a high-value fact, so `holt memory search` and chat recall can surface synthesized knowledge, not just raw turns.
 
 ## Skills
 
@@ -229,6 +261,7 @@ holt graph           see your memory as an interactive knowledge graph
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt skill           manage skills: list | show | create | add | remove
 holt memory          inspect memory: holt memory [search <query> | facts | embed | clear]
+holt wiki            derived knowledge wiki: holt wiki [sync | rebuild | lint | list | show | status]
 holt setting         configure brains, API brains, and launch command
 holt login <brain>   sign in to claude, codex, or gemini
 holt version         print version
@@ -253,7 +286,8 @@ Built in always-shippable phases toward a full-vision v1:
 3. **Skills**: portable SKILL.md skills, create/add/run *(shipped)*
 4. **Knowledge graph**: see and navigate your own memory with `holt graph` *(shipped)*
 5. **Everywhere**: MCP server so other tools read Holt's memory, plus `holt run`, scheduling, and Telegram *(shipped)*
-6. **Next**: docs site, skill registry publishing, more channels
+6. **Knowledge wiki**: LLM-maintained, cross-linked, regenerable pages over your memory with `holt wiki` *(shipped)*
+7. **Next**: docs site, skill registry publishing, more channels
 
 ## Contributing
 

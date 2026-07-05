@@ -6,7 +6,7 @@
  */
 import type { MemTurn } from './memory';
 
-export type NodeKind = 'turn' | 'concept';
+export type NodeKind = 'turn' | 'concept' | 'wiki';
 
 export interface GraphNode {
   id: string;
@@ -21,7 +21,7 @@ export interface GraphNode {
   freq?: number;
 }
 
-export type EdgeKind = 'sequential' | 'semantic' | 'concept';
+export type EdgeKind = 'sequential' | 'semantic' | 'concept' | 'wikilink';
 
 export interface GraphEdge {
   source: string;
@@ -168,6 +168,60 @@ export function buildGraph(turns: MemTurn[]): Graph {
   return { nodes, edges };
 }
 
+/**
+ * A minimal wiki page for graph rendering: a title, a slug, and its outgoing
+ * [[links]] (already resolved to target titles). Kept structural so this module
+ * stays free of fs/config imports.
+ */
+export interface WikiGraphPage {
+  slug: string;
+  title: string;
+  links: string[]; // [[Title]] or [[slug]] targets as written on the page
+}
+
+/**
+ * Build wiki nodes + [[link]] edges. Additive: merge the result into a memory
+ * graph with mergeGraphs(), or render it alone. A page is one node; each
+ * resolved wikilink is one 'wikilink' edge. Unresolved links are dropped (no
+ * dangling edges). Node ids are namespaced "wiki:<slug>" so they never collide
+ * with turn/concept ids.
+ */
+export function buildWikiGraph(pages: WikiGraphPage[]): Graph {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  // Index by both slug and lowercased title so [[Title]] and [[slug]] both resolve.
+  const byKey = new Map<string, WikiGraphPage>();
+  for (const p of pages) {
+    byKey.set(p.slug.toLowerCase(), p);
+    byKey.set(p.title.toLowerCase(), p);
+  }
+
+  for (const p of pages) {
+    nodes.push({ id: 'wiki:' + p.slug, kind: 'wiki', label: p.title });
+  }
+  for (const p of pages) {
+    const seen = new Set<string>();
+    for (const raw of p.links) {
+      const target = byKey.get(raw.toLowerCase());
+      if (!target || target.slug === p.slug) continue;
+      const key = target.slug;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ source: 'wiki:' + p.slug, target: 'wiki:' + target.slug, kind: 'wikilink', width: 2 });
+    }
+  }
+  return { nodes, edges };
+}
+
+/** Merge two graphs, de-duplicating nodes by id. Edges are concatenated. */
+export function mergeGraphs(a: Graph, b: Graph): Graph {
+  const seen = new Set(a.nodes.map((n) => n.id));
+  const nodes = [...a.nodes];
+  for (const n of b.nodes) if (!seen.has(n.id)) { nodes.push(n); seen.add(n.id); }
+  return { nodes, edges: [...a.edges, ...b.edges] };
+}
+
 /** Escape a string so it can sit safely inside a JSON <script> block. */
 function escapeForScript(json: string): string {
   // The JSON is already valid; the only sequence that can break out of a
@@ -287,6 +341,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   <div class="row"><span class="swatch" style="background:var(--amber)"></span>you</div>
   <div class="row"><span class="swatch" style="background:var(--cyan)"></span>assistant</div>
   <div class="row"><span class="swatch" style="background:var(--violet)"></span>concept</div>
+  <div class="row"><span class="swatch" style="background:#5bd66f"></span>wiki page</div>
   <div class="row"><span class="swatch" style="background:var(--line);border:1px solid var(--muted)"></span>ring = session</div>
 </div>
 <div id="hint">drag to pan &middot; wheel to zoom &middot; click a node &middot; Esc to clear</div>
@@ -337,7 +392,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   });
 
   function radiusOf(n) {
-    var base = n.kind === "concept" ? 3 : 5;
+    var base = n.kind === "concept" ? 3 : n.kind === "wiki" ? 6 : 5;
     return base + Math.min(9, Math.sqrt(n._deg) * 1.6);
   }
 
@@ -416,6 +471,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   var query = "";
 
   function roleColor(n) {
+    if (n.kind === "wiki") return "#5bd66f";
     if (n.kind === "concept") return "#9a8cff";
     return n.role === "user" ? "#f0b91e" : "#35d0d6";
   }
@@ -442,7 +498,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
       }
       ctx.globalAlpha = dim;
       ctx.lineWidth = Math.max(0.4, lk.width * view.scale * 0.5);
-      ctx.strokeStyle = lk.kind === "semantic" ? "#35d0d6" : lk.kind === "concept" ? "#9a8cff" : "#4a5262";
+      ctx.strokeStyle = lk.kind === "semantic" ? "#35d0d6" : lk.kind === "concept" ? "#9a8cff" : lk.kind === "wikilink" ? "#5bd66f" : "#4a5262";
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -473,11 +529,11 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
         ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
       }
 
-      // concept labels always; turn labels when zoomed in
-      if (n.kind === "concept" || view.scale > 1.4) {
+      // concept + wiki labels always; turn labels when zoomed in
+      if (n.kind === "concept" || n.kind === "wiki" || view.scale > 1.4) {
         ctx.globalAlpha = faded ? 0.25 : 0.9;
-        ctx.fillStyle = "#e7e9ee";
-        ctx.font = (n.kind === "concept" ? 11 : 10) + "px ui-monospace, monospace";
+        ctx.fillStyle = n.kind === "wiki" ? "#5bd66f" : "#e7e9ee";
+        ctx.font = (n.kind === "wiki" ? 12 : n.kind === "concept" ? 11 : 10) + "px ui-monospace, monospace";
         ctx.fillText(n.label, p.x + r + 4, p.y + 3);
       }
     }
@@ -541,6 +597,8 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
         var when = hov.ts ? new Date(hov.ts).toISOString().slice(0, 10) : "";
         var meta = hov.kind === "concept"
           ? ("concept &middot; in " + (hov.freq || 0) + " turns")
+          : hov.kind === "wiki"
+          ? "wiki page"
           : (esc(hov.session || "") + (when ? " &middot; " + when : ""));
         tooltip.innerHTML = "<div>" + esc(hov.label) + "</div><div class='t-meta'>" + meta + "</div>";
         tooltip.style.display = "block";
@@ -584,8 +642,8 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   }
   function onNodeClick(n) {
     selected = n.id;
-    if (n.kind === "concept") {
-      highlightSet = neighbors(n.id); // light up its connected turns
+    if (n.kind === "concept" || n.kind === "wiki") {
+      highlightSet = neighbors(n.id); // light up its connected nodes
       closePanel();
     } else {
       highlightSet = null;

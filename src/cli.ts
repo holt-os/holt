@@ -9,6 +9,7 @@ import { chat } from './commands/chat';
 import { setting } from './commands/setting';
 import { login } from './commands/login';
 import { memoryCmd } from './commands/memory';
+import { wikiCmd } from './commands/wiki';
 import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
 import { mcp } from './commands/mcp';
@@ -39,6 +40,7 @@ Commands:
   telegram        Chat with Holt from your phone: holt telegram [setup]
   notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
   memory          Inspect memory: holt memory [search <query> | embed | clear]
+  wiki            Your derived knowledge wiki: holt wiki [sync | rebuild | lint | list | show]
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
   mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
@@ -84,6 +86,9 @@ async function main(): Promise<void> {
       break;
     case 'memory':
       await memoryCmd(process.argv[3], process.argv.slice(4));
+      break;
+    case 'wiki':
+      await wikiCmd(process.argv[3], process.argv.slice(4));
       break;
     case 'skill':
     case 'skills':
