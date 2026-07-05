@@ -16,6 +16,7 @@ import { run } from './commands/run';
 import { schedule } from './commands/schedule';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
+import { doctor } from './commands/doctor';
 import { VERSION } from './version';
 
 const BANNER = `
@@ -41,6 +42,7 @@ Commands:
   memory          Inspect memory: holt memory [search <query> | embed | clear]
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
+  doctor          Check this machine and recommend how best to run Holt here
   mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
   setting         Configure brains, API brains, and your launch command (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
@@ -106,6 +108,9 @@ async function main(): Promise<void> {
       break;
     case 'notify':
       await notify(process.argv.slice(3));
+      break;
+    case 'doctor':
+      await doctor();
       break;
     default:
       console.error(`\n  Unknown command: "${cmd}"`);

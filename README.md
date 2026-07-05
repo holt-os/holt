@@ -216,6 +216,27 @@ holt run "daily brief" | holt notify   # pipe any output to your phone
 
 The token is stored in `~/.holt/telegram.json` (mode 600) and never printed in full.
 
+## Machine check (`holt doctor`)
+
+Not sure how best to run Holt on your hardware? `holt doctor` looks at this machine and its installed tools and tells you, in plain language, what to do.
+
+```bash
+holt doctor
+```
+
+It reports, section by section:
+
+- **Machine**: platform, CPU, RAM (total and free), and Node version.
+- **Brains**: which agent CLIs (`claude`, `codex`, `gemini`) are installed, plus a recommendation (prefer an installed CLI brain; otherwise install one or add an API brain).
+- **Semantic memory**: whether a local Ollama with the embed model is reachable, and how to enable it (`ollama pull nomic-embed-text`) so recall is semantic and fully private.
+- **Knowledge wiki maintainer**: `brain` (the default, best quality, rides your existing plan) versus a local model sized to your RAM. On a 16 GB machine it names `qwen2.5:7b`; more RAM gets a larger model; under 16 GB it steers you to `brain`.
+- **Always-on / Telegram**: whether a Telegram bot is set up, and a note on hosting the bot on a low-power always-on machine while keeping heavy local models on a bigger one.
+- **Recommended next steps**: a short checklist built from whatever gaps it found.
+
+It is read-only advice: it changes nothing, needs no trust, and always exits cleanly even when a probe fails.
+
+The RAM-to-model table lives in `src/specs.ts` (`LOCAL_MODEL_RECS` / `recommendLocalModel`), the single source of truth the wiki maintainer reads too.
+
 ## Commands
 
 ```
@@ -225,6 +246,7 @@ holt run <task>      run one task non-interactively (recall, brain, remember)
 holt schedule        run a task on a timer: add | list | remove
 holt telegram        chat with Holt from your phone: telegram [setup]
 holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
+holt doctor          check this machine and recommend how best to run Holt here
 holt graph           see your memory as an interactive knowledge graph
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt skill           manage skills: list | show | create | add | remove
