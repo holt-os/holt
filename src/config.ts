@@ -35,6 +35,20 @@ export interface MemorySettings {
   extractFacts: boolean;
 }
 
+/** Who maintains the derived knowledge wiki, and (for local) which model. */
+export type WikiMaintainer = 'brain' | 'local';
+
+export interface WikiSettings {
+  /** 'brain' (default) uses the folder's configured brain; 'local' uses Ollama. */
+  maintainer: WikiMaintainer;
+  /** Ollama generative model used when maintainer is 'local'. */
+  localModel: string;
+  /** Reserved for a future auto-sync-on-session-end hook. Off by default. */
+  autoSync?: boolean;
+}
+
+export const WIKI_DEFAULT_LOCAL_MODEL = 'qwen2.5:7b';
+
 export interface HoltConfig {
   version: number;
   defaultBrain: string | null; // a BrainId or an ApiBrain id
@@ -42,6 +56,7 @@ export interface HoltConfig {
   apiBrains: ApiBrain[];
   outputFormat: OutputFormat;
   memory: MemorySettings;
+  wiki: WikiSettings;
 }
 
 export const BRAIN_DEFS: Record<BrainId, { label: string; command: string; args: string[] }> = {
@@ -81,7 +96,15 @@ export function defaultConfig(): HoltConfig {
     const d = BRAIN_DEFS[id];
     brains[id] = { id, label: d.label, command: d.command, args: [...d.args], enabled: false };
   }
-  return { version: 4, defaultBrain: null, brains, apiBrains: [], outputFormat: 'markdown', memory: { extractFacts: true } };
+  return {
+    version: 5,
+    defaultBrain: null,
+    brains,
+    apiBrains: [],
+    outputFormat: 'markdown',
+    memory: { extractFacts: true },
+    wiki: { maintainer: 'brain', localModel: WIKI_DEFAULT_LOCAL_MODEL },
+  };
 }
 
 export function loadConfig(): HoltConfig | null {
@@ -93,8 +116,19 @@ export function loadConfig(): HoltConfig | null {
     // Graceful migration from v2 (and any missing field): fill defaults.
     const brains = (cfg.brains ?? {}) as Record<BrainId, BrainConfig>;
     for (const id of BRAIN_IDS) if (!brains[id]) brains[id] = base.brains[id];
+    // Additive v4 -> v5 migration: fill the wiki block from defaults, never lose
+    // existing fields. Mirrors the way the memory block was added earlier.
+    const wikiIn = (cfg.wiki ?? {}) as Partial<WikiSettings>;
+    const wiki: WikiSettings = {
+      maintainer: wikiIn.maintainer === 'local' ? 'local' : 'brain',
+      localModel:
+        typeof wikiIn.localModel === 'string' && wikiIn.localModel.trim()
+          ? wikiIn.localModel.trim()
+          : WIKI_DEFAULT_LOCAL_MODEL,
+      ...(typeof wikiIn.autoSync === 'boolean' ? { autoSync: wikiIn.autoSync } : {}),
+    };
     return {
-      version: 4,
+      version: 5,
       defaultBrain: cfg.defaultBrain ?? null,
       brains,
       apiBrains: Array.isArray(cfg.apiBrains) ? cfg.apiBrains : [],
@@ -103,6 +137,7 @@ export function loadConfig(): HoltConfig | null {
         extractFacts:
           cfg.memory && typeof cfg.memory.extractFacts === 'boolean' ? cfg.memory.extractFacts : true,
       },
+      wiki,
     };
   } catch {
     return null;
