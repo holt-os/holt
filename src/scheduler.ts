@@ -24,6 +24,12 @@ export interface Job {
   workspace: string; // absolute path the task runs in
   notify: boolean;
   brain?: string;
+  // Optional override for the holt subcommand a job fires. When absent the job
+  // runs `holt run "<task>" ...` (the default). Routines set this to
+  // ["routine", "run", "<name>"] so the same builders emit a routine invocation
+  // that already knows how to route its own output. When set, this owns notify
+  // routing, so buildCommand does NOT append a `holt notify` pipe.
+  runArgs?: string[];
 }
 
 export interface ParsedWhen {
@@ -131,6 +137,14 @@ export function resolveHoltPath(): string {
 export function buildCommand(job: Job, holtPath: string): string {
   const holt = shQuote(holtPath);
   const ws = shQuote(job.workspace);
+
+  // A job with runArgs (a routine) invokes that subcommand and owns its own
+  // output routing, so we neither add --out nor pipe to notify here.
+  if (job.runArgs && job.runArgs.length > 0) {
+    const parts = job.runArgs.map(shQuote).join(' ');
+    return `cd ${ws} && ${holt} ${parts} --quiet`;
+  }
+
   const log = shQuote(logPath(job.id));
   let cmd = `cd ${ws} && ${holt} run ${shQuote(job.task)}`;
   if (job.brain) cmd += ` --brain ${shQuote(job.brain)}`;

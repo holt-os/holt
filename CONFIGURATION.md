@@ -78,6 +78,35 @@ Remove a path here to un-trust that folder; Holt will ask again next time you ru
 
 The server operates on the folder its process starts in, exactly like `holt chat`. MCP is non-interactive (stdin carries the JSON-RPC protocol), so it cannot prompt for trust: it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. In server mode stdout is the protocol channel; any log line goes to stderr instead.
 
+## Routines: `~/.holt/routines.json`
+
+A routine is a named, reusable job: a **task source** (an installed skill or an inline prompt) plus an optional **daily schedule** plus **output routing** (stdout, a file, or Telegram). It is the bundle of `holt skill` / `holt run` / `holt schedule` / `holt notify` under one name, and is the generic version of a recurring "agent" like a daily brief. Manage routines with `holt routine [add | run | list | show | remove]`.
+
+Routines live in one global file, `~/.holt/routines.json`, one entry per routine, each carrying the absolute `workspace` it runs in (captured at add time):
+
+```json
+[
+  {
+    "name": "brief",
+    "source": { "kind": "task", "value": "summarize what changed and what is open here" },
+    "when": "07:00",
+    "notify": true,
+    "out": "brief.md",
+    "brain": "claude",
+    "workspace": "/Users/you/projects/notes"
+  }
+]
+```
+
+- `source.kind` is `task` (an inline prompt in `value`) or `skill` (a skill name in `value`; its `SKILL.md` body is spliced into the prompt at run time).
+- `when` is a 24h daily `HH:MM`. Present only for scheduled routines; absent means manual, run-on-demand.
+- `notify` pushes the result to Telegram (guarded cleanly when Telegram is not configured); `out` also writes it to that file (relative to `workspace`). With neither, the result prints to stdout.
+- `brain` is an optional brain id override.
+
+A routine with a `when` also owns an entry in `~/.holt/schedules.json` (the same store `holt schedule` uses), keyed by the routine name, whose installed OS timer (launchd on macOS, cron on Linux) fires `holt routine run <name> --quiet`. The two stores are kept consistent: removing the routine removes its schedule entry and OS timer. Running a routine is trust-gated like every command that runs a task in a folder; under a non-TTY (a scheduled run) it behaves like `holt run` and refuses cleanly in an untrusted folder rather than prompting.
+
+`holt routine add <name> --template <t>` scaffolds a routine from a small built-in map (`daily-brief`, `standup`), each a sensible task + daily schedule + notify default you can then edit.
+
 ## Memory files: `<folder>/.holt/memory/turns.jsonl`
 
 Per-folder conversation memory, append-only, one JSON object per line:

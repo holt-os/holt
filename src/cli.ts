@@ -14,6 +14,7 @@ import { graph } from './commands/graph';
 import { mcp } from './commands/mcp';
 import { run } from './commands/run';
 import { schedule } from './commands/schedule';
+import { routine } from './commands/routine';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
 import { VERSION } from './version';
@@ -36,6 +37,7 @@ Commands:
   chat            Start a session. It remembers past sessions in this folder
   run <task>      Run one task non-interactively: recall, brain executes, remember
   schedule        Fire "holt run" on a timer: holt schedule [add | list | remove]
+  routine         Named, reusable, scheduled jobs: holt routine [add | run | list | remove]
   telegram        Chat with Holt from your phone: holt telegram [setup]
   notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
   memory          Inspect memory: holt memory [search <query> | embed | clear]
@@ -100,6 +102,9 @@ async function main(): Promise<void> {
       break;
     case 'schedule':
       await schedule(process.argv[3], process.argv.slice(4));
+      break;
+    case 'routine':
+      await routine(process.argv[3], process.argv.slice(4));
       break;
     case 'telegram':
       await telegram(process.argv[3], process.argv.slice(4));

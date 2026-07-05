@@ -216,6 +216,38 @@ holt run "daily brief" | holt notify   # pipe any output to your phone
 
 The token is stored in `~/.holt/telegram.json` (mode 600) and never printed in full.
 
+### holt routine
+
+A routine is a named, reusable job: it bundles the pieces above into one object you can run by name or on a schedule. A routine is a **task source** (an installed skill or an inline prompt) plus an optional **daily schedule** plus **output routing** (stdout, a file, or Telegram). It is the generic version of a recurring "agent" such as a daily brief.
+
+```bash
+# an inline task you can rerun by name
+holt routine add brief --task "summarize what changed and what is open here" --notify
+
+# a routine backed by an installed skill
+holt routine add triage --skill inbox-triage --out triage.md
+
+# a scheduled routine: installs an OS timer that fires "holt routine run digest --quiet"
+holt routine add digest --task "digest today's changes" --at 07:00 --notify
+
+# a built-in template (daily-brief or standup)
+holt routine add myday --template daily-brief
+
+holt routine run brief          # run it now and stream the reply
+holt routine run brief --out b.md   # also write the reply to a file this run
+holt routine list               # name, source, schedule, outputs, workspace
+holt routine show brief         # full detail
+holt routine remove brief       # deletes the routine and its OS timer, if any
+```
+
+Sources: give exactly one of `--skill <name>`, `--task "<prompt>"`, or `--template <t>`. A skill routine splices that skill's `SKILL.md` body into the prompt at run time; a task routine uses the prompt as-is.
+
+Scheduling: `--at HH:MM` (24h, daily) installs an OS timer through the same scheduler `holt schedule` uses (launchd on macOS, cron on Linux) whose command is `holt routine run <name> --quiet`. Omit `--at` for a manual, run-on-demand routine. Removing the routine removes its timer.
+
+Output routing: by default the result prints to stdout. `--out <file>` also writes it to a file (relative to the routine's workspace); `--notify` pushes it to Telegram (guarded cleanly when Telegram is not set up). Both `--out` and `--notify` can also be passed to `holt routine run` for a single run. In `--quiet` mode (what the scheduler uses) stdout is suppressed but `--out` and `--notify` still fire.
+
+Routines are stored in `~/.holt/routines.json` (one entry per routine, each carrying its absolute workspace). A routine with a schedule also produces an entry in `~/.holt/schedules.json`, keyed by the routine name; the two are kept consistent.
+
 ## Commands
 
 ```
@@ -223,6 +255,7 @@ holt init            set up (trust, brains, sign-in, defaults) for this folder
 holt chat            start a session that remembers past ones
 holt run <task>      run one task non-interactively (recall, brain, remember)
 holt schedule        run a task on a timer: add | list | remove
+holt routine         named, reusable, scheduled jobs: add | run | list | show | remove
 holt telegram        chat with Holt from your phone: telegram [setup]
 holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
 holt graph           see your memory as an interactive knowledge graph
