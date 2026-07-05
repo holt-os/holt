@@ -78,6 +78,23 @@ Remove a path here to un-trust that folder; Holt will ask again next time you ru
 
 The server operates on the folder its process starts in, exactly like `holt chat`. MCP is non-interactive (stdin carries the JSON-RPC protocol), so it cannot prompt for trust: it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. In server mode stdout is the protocol channel; any log line goes to stderr instead.
 
+## Ambient memory hooks: `holt hook`
+
+`holt hook install` wires Holt into Claude Code so per-folder memory works ambiently, with no `holt chat` and no manual tool call. It edits Claude Code's `settings.json` to register two [hooks](https://docs.claude.com/en/docs/claude-code/hooks):
+
+- **inject** on the `UserPromptSubmit` event, running `holt hook inject`: before each prompt, recall the top notes for the current folder and print them so Claude Code adds them to context.
+- **capture** on the `Stop` event, running `holt hook capture`: when a session ends, distill durable facts from the transcript (via the folder's configured brain) and save them to the folder's memory.
+
+Management commands:
+
+- `holt hook install` writes both hooks. `--inject-only` / `--capture-only` narrow it. `--project` writes `./.claude/settings.json` instead of the default global `~/.claude/settings.json` (created if missing).
+- `holt hook remove` removes **only** Holt's entries (identified by the `holt hook inject` / `holt hook capture` command). Add `--project` to scope to the project file. Everything else in the file is preserved.
+- `holt hook status` reports the installed state (global and project) and which directions are active.
+
+Install **merges** into any existing `hooks` config, is **idempotent** (re-running never duplicates an entry), and copies the file to `settings.json.holt-bak` before writing.
+
+**Trusted-folder guard.** The runtime bodies (`holt hook inject`, `holt hook capture`) are invoked by Claude Code, not you. They no-op **silently** in any folder that is not a trusted Holt workspace (`~/.holt/trust.json`) with an existing `.holt/memory`. Holt never injects private notes into unrelated projects and never creates memory in folders you did not set up. Run `holt init` (or `holt chat`) in a folder once to make it eligible. The inject hook writes **only** the context block to stdout (Claude Code injects it verbatim); all diagnostics go to stderr, and both hooks always exit 0. `capture` also respects the `memory.extractFacts` config flag and does nothing if no brain is configured. Uninstall with `holt hook remove`.
+
 ## Memory files: `<folder>/.holt/memory/turns.jsonl`
 
 Per-folder conversation memory, append-only, one JSON object per line:

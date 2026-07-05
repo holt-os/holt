@@ -173,6 +173,28 @@ claude mcp add holt -- holt mcp
 
 Point the client at the folder whose memory you want it to use; Holt serves whatever folder the server process starts in.
 
+## Ambient memory for Claude Code (`holt hook`)
+
+The MCP server above lets Claude Code recall and remember **when it decides to**. `holt hook` goes further: it makes Holt's per-folder memory work **ambiently**, with no `holt chat` and no manual tool call. Two directions, both wired as [Claude Code hooks](https://docs.claude.com/en/docs/claude-code/hooks):
+
+- **Inject** (`UserPromptSubmit`): before each prompt, Holt quietly recalls the most relevant remembered notes for the current folder and adds them to the model's context.
+- **Capture** (`Stop`): when a session ends, Holt distills durable facts from the transcript (via this folder's configured brain) and saves them to the folder's memory.
+
+```bash
+holt hook install                 # install both hooks into ~/.claude/settings.json
+holt hook install --inject-only   # only the before-prompt recall hook
+holt hook install --capture-only  # only the end-of-session fact hook
+holt hook install --project       # write ./.claude/settings.json instead of the global one
+holt hook status                  # show what is installed and which directions are active
+holt hook remove                  # remove ONLY Holt's hooks, leaving everything else intact
+```
+
+Install **merges** into any existing `hooks` config, never clobbers unrelated settings or other hooks, is **idempotent** (re-running does not duplicate), and backs the file up to `settings.json.holt-bak` before writing. `remove` deletes only the entries whose command is `holt hook inject` / `holt hook capture`.
+
+**Trusted-folder guard (important).** The two runtime hooks (`holt hook inject` and `holt hook capture`, invoked by Claude Code, not you) no-op **silently** unless the folder is a trusted Holt workspace with an existing `.holt/memory`. So Holt never injects your private notes into an unrelated project, and never creates memory in a folder you never set up. To make a folder ambient, run `holt init` (or `holt chat`) there once so it becomes trusted and gets its `.holt/memory`. The inject hook keeps stdout clean (only the context block is printed, since Claude Code injects it verbatim); all diagnostics go to stderr, and both hooks always exit 0 so a memory step never blocks or slows your prompt.
+
+To uninstall, run `holt hook remove` (add `--project` if you installed with `--project`).
+
 ## Output format
 
 Replies print as markdown. `/output html` (or `markdown`) switches the save format and persists it. `/save [name]` writes the last reply to the current folder: `.md`, or a small self-contained dark-theme `.html` page.
@@ -227,6 +249,7 @@ holt telegram        chat with Holt from your phone: telegram [setup]
 holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
 holt graph           see your memory as an interactive knowledge graph
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
+holt hook            ambient memory for Claude Code: install | remove | status
 holt skill           manage skills: list | show | create | add | remove
 holt memory          inspect memory: holt memory [search <query> | facts | embed | clear]
 holt setting         configure brains, API brains, and launch command
