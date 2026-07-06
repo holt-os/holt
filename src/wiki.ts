@@ -25,10 +25,10 @@ import { totalmem } from 'node:os';
 import { wsHoltDir } from './workspace';
 import { sanitizeName, parseFrontmatter } from './skills';
 import { embed, loadTurns, appendTurn, type MemTurn } from './memory';
-import { runBrain } from './brains';
+import { runBrain, isInstalled } from './brains';
 import { runApiBrain } from './apibrain';
 import { localGenerate, localModelStatus, pullHint } from './localmodel';
-import type { BrainId, ApiBrain, HoltConfig } from './config';
+import { BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig } from './config';
 
 // ---- paths ----
 
@@ -311,6 +311,24 @@ export async function resolveMaintainer(
   return { maintainer: brain, report: { maintainer: brain, fellBack: false } };
 }
 
+/**
+ * Resolve the folder's default brain into a Maintainer (or null). Mirrors
+ * runner.ts / the chat resolver. Shared by the `holt wiki` command and both
+ * auto-sync triggers so brain resolution lives in one place.
+ */
+export function resolveBrainMaintainer(cfg: HoltConfig): Maintainer | null {
+  const id = cfg.defaultBrain;
+  if (!id) return null;
+  if ((BRAIN_IDS as string[]).includes(id)) {
+    const b = cfg.brains[id as BrainId];
+    if (!isInstalled(b.command)) return null;
+    return { kind: 'cli', id: id as BrainId, label: b.label };
+  }
+  const api = findApiBrain(cfg, id);
+  if (api && resolveApiKey(api)) return { kind: 'api', brain: api, label: `${id} (api: ${api.provider}/${api.model})` };
+  return null;
+}
+
 /** Run one maintenance prompt through whichever maintainer is active. */
 export async function runMaintainer(
   m: Maintainer,
@@ -356,6 +374,184 @@ export function buildPagePrompt(
   }
   lines.push('', 'New facts to integrate:', ...facts.map((f) => `- ${f}`), '', 'Updated page body:');
   return lines.join('\n');
+}
+
+// ---- sync engine (shared by the command AND the auto-sync triggers) ----
+//
+// The actual fact-folding lives here so `holt wiki sync`, the chat session-end
+// auto-sync, and the capture-hook auto-sync all call ONE implementation. Never
+// throws: partial progress is fine, and the wiki is always regenerable.
+
+export interface SyncSummary {
+  created: number;
+  updated: number;
+  factsIntegrated: number;
+}
+
+/** Outcome of a full syncWiki() call, including maintainer/degradation notes. */
+export interface SyncResult extends SyncSummary {
+  /** 'ok' folded facts; 'nothing' had no fresh facts; 'no-maintainer' could not run. */
+  status: 'ok' | 'nothing' | 'no-maintainer';
+  /** How many fresh facts we attempted (before folding). */
+  freshFacts: number;
+  /** The maintainer used, if any. */
+  maintainer: Maintainer | null;
+  /** The maintainer report (degradation note, fell-back flag), if any. */
+  report: MaintainerReport | null;
+  /** True when any page file was created or updated. */
+  changed: boolean;
+}
+
+function emptySummary(): SyncSummary {
+  return { created: 0, updated: 0, factsIntegrated: 0 };
+}
+
+function dedupe(a: string[]): string[] {
+  return [...new Set(a)];
+}
+
+function deriveTitle(content: string, slug: string): string {
+  // Human-friendly title from the slug (Title Case), fallback to first words.
+  const fromSlug = slug.split('-').filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(' ');
+  return fromSlug || content.slice(0, 40);
+}
+
+/** Some models echo a frontmatter block despite instructions; strip a leading one. */
+function stripFrontmatterEcho(text: string): string {
+  let s = text.trim();
+  s = s.replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  if (s.startsWith('---')) {
+    const end = s.indexOf('\n---', 3);
+    if (end >= 0) s = s.slice(end + 4).trim();
+  }
+  return s;
+}
+
+/**
+ * Fold facts (given, already selected) into pages using the maintainer. Groups
+ * facts by routed target page, one maintainer call per changed page. Returns a
+ * summary plus the pages that changed. Never throws.
+ */
+export async function foldFacts(
+  cfg: HoltConfig,
+  maintainer: Maintainer,
+  facts: FactSource[],
+): Promise<{ summary: SyncSummary; changed: WikiPage[] }> {
+  const summary = emptySummary();
+  if (facts.length === 0) return { summary, changed: [] };
+
+  let pages = loadPages();
+  const targets = await pageEmbeddings(pages);
+
+  // Route each fact to a target slug, grouping facts by page.
+  const groups = new Map<string, { slug: string; isNew: boolean; facts: FactSource[] }>();
+  for (const f of facts) {
+    const decision = await routeFact(f.content, targets);
+    const slug = decision.slug;
+    let isNew = decision.kind === 'new';
+    const existingGroup = groups.get(slug);
+    if (existingGroup) {
+      existingGroup.facts.push(f);
+    } else {
+      // A "new" slug that already exists on disk is really an update.
+      if (isNew && listPageSlugs().includes(slug)) isNew = false;
+      groups.set(slug, { slug, isNew, facts: [f] });
+    }
+  }
+
+  // Track known titles so pages written later in this same sync can link back to
+  // pages created earlier in it (otherwise the first-created pages get no links).
+  const knownTitles = new Set(pages.map((p) => p.title));
+  for (const group of groups.values()) {
+    knownTitles.add(readPage(group.slug)?.title ?? deriveTitle(group.facts[0]!.content, group.slug));
+  }
+  const changed: WikiPage[] = [];
+
+  for (const group of groups.values()) {
+    const existing = readPage(group.slug);
+    const title = existing?.title ?? deriveTitle(group.facts[0]!.content, group.slug);
+    const prompt = buildPagePrompt(
+      title,
+      existing?.body ?? '',
+      group.facts.map((f) => f.content),
+      [...knownTitles].filter((t) => t !== title),
+    );
+    const res = await runMaintainer(maintainer, cfg, prompt);
+    if (!res.ok || !res.text.trim()) continue; // skip; do not lose progress on others
+    const body = stripFrontmatterEcho(res.text);
+    const prevSources = existing?.sources ?? [];
+    const page: WikiPage = {
+      slug: group.slug,
+      title,
+      updated: new Date().toISOString().slice(0, 10),
+      sources: dedupe([...prevSources, ...group.facts.map((f) => f.id)]),
+      body,
+    };
+    writePage(page);
+    changed.push(page);
+    if (existing) summary.updated++;
+    else summary.created++;
+    summary.factsIntegrated += group.facts.length;
+  }
+
+  // Refresh index + recall for the pages that changed.
+  pages = loadPages();
+  writeIndex(pages);
+  await indexPagesForRecall(changed);
+  return { summary, changed };
+}
+
+/**
+ * Full "sync": select the facts newer than the last-sync marker, resolve a
+ * maintainer, fold them into pages, and advance the marker. This is the ONE
+ * implementation shared by the `holt wiki sync` command and the auto-sync
+ * triggers (chat session-end + capture hook). Never throws.
+ *
+ * `resolveBrain` is injected so this module stays free of the command layer's
+ * brain-resolution details (which live next to config/brains helpers).
+ */
+export async function syncWiki(
+  cfg: HoltConfig,
+  resolveBrain: () => Maintainer | null,
+): Promise<SyncResult> {
+  const base: SyncResult = {
+    ...emptySummary(),
+    status: 'nothing',
+    freshFacts: 0,
+    maintainer: null,
+    report: null,
+    changed: false,
+  };
+  try {
+    const state = loadState();
+    const fresh = factRows().filter((f) => f.ts > state.lastSyncTs);
+    if (fresh.length === 0) return base;
+    base.freshFacts = fresh.length;
+
+    const { maintainer, report } = await resolveMaintainer(cfg, resolveBrain);
+    base.maintainer = maintainer;
+    base.report = report;
+    if (!maintainer) return { ...base, status: 'no-maintainer' };
+
+    const { summary, changed } = await foldFacts(cfg, maintainer, fresh);
+
+    // Advance the marker to the newest fact we saw (even if some pages were
+    // skipped; rebuild recovers, and re-syncing a fact is harmless).
+    const newest = Math.max(state.lastSyncTs, ...fresh.map((f) => f.ts));
+    saveSyncMarker(newest);
+
+    return {
+      ...summary,
+      status: 'ok',
+      freshFacts: fresh.length,
+      maintainer,
+      report,
+      changed: changed.length > 0,
+    };
+  } catch {
+    // Best-effort: never throw out of the shared sync engine.
+    return base;
+  }
 }
 
 // ---- index.md (the MEMORY.md analog) ----

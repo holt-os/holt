@@ -160,17 +160,22 @@ Memory has three layers, each derived from the one below it:
 The core rule: **wiki pages are derived and regenerable, never a sole source of truth.** Turns and facts stay authoritative. Every page records which fact ids it drew from (frontmatter `sources:`), so `holt wiki rebuild` can regenerate the whole wiki from scratch. A bad synthesis is therefore never lossy: rebuild recovers it. Pages are plain Obsidian-compatible Markdown with `[[wikilinks]]` and an `index.md`, so you can point Obsidian at `.holt/wiki` as a vault, or edit pages by hand (a rebuild will overwrite hand-edits, so keep the folder under git if you edit).
 
 ```bash
-holt wiki                     # status: maintainer, model, page count, last sync, RAM hint
+holt wiki                     # status: maintainer, model, auto-sync, page count, last sync, RAM hint
 holt wiki sync                # fold new facts into pages (route + merge)
+holt wiki auto [on|off]       # auto-sync the wiki when a session ends (wiki.autoSync)
 holt wiki rebuild             # wipe and regenerate every page from facts (asks first)
-holt wiki lint                # audit pages for contradictions, duplicates, gaps
+holt wiki lint [--fix]        # audit for contradictions, duplicates, gaps; --fix applies the fixes
 holt wiki list                # list pages (title, updated, size)
 holt wiki show <page>         # print one page
 holt wiki open                # open the wiki in your default app (Obsidian reads it natively)
 holt wiki setup               # recommend a local model for this machine's RAM
 ```
 
-**How sync works.** `holt wiki sync` gathers facts added since the last sync (a marker in `.holt/wiki/.state.json`), embeds each one locally, and routes it to the nearest existing page by cosine similarity. Related facts land on the same page; a fact that matches nothing new starts a fresh page. Facts are grouped by target page and the maintainer is called **once per changed page** (not once per fact), so it only rewrites the few pages that actually changed. Routing is always local and free, which is what keeps the maintainer's cost minimal. `holt wiki rebuild` folds every fact from scratch; `holt wiki lint` reports issues but does not rewrite (propose-only).
+**How sync works.** `holt wiki sync` gathers facts added since the last sync (a marker in `.holt/wiki/.state.json`), embeds each one locally, and routes it to the nearest existing page by cosine similarity. Related facts land on the same page; a fact that matches nothing new starts a fresh page. Facts are grouped by target page and the maintainer is called **once per changed page** (not once per fact), so it only rewrites the few pages that actually changed. Routing is always local and free, which is what keeps the maintainer's cost minimal. `holt wiki rebuild` folds every fact from scratch.
+
+**Self-maintaining (auto-sync).** Turn on `holt wiki auto on` (persists `wiki.autoSync: true` for the folder) and the wiki keeps itself current with no manual command. It syncs **after fact distillation** at the end of a `holt chat` session, and ambiently when the Claude Code **Stop** hook fires (`holt hook capture`), so newly captured facts fold straight into pages. Auto-sync is silent, best-effort, and never blocks exit: it reuses the exact same sync engine as `holt wiki sync`, so there is no behavior drift. Left off (the default), nothing changes and you sync by hand. `holt wiki auto` with no argument shows the current state; `holt wiki status` surfaces it too.
+
+**Lint that can fix.** `holt wiki lint` audits pages for contradictions, duplicates, and gaps and prints a report only (files untouched). Add `--fix` and Holt asks the maintainer to return corrected page bodies and **applies them**, rewriting the affected pages (provenance/`sources` is preserved). Because pages are derived and regenerable, applying is safe: a bad `--fix` is fully recoverable with `holt wiki rebuild`, and the command prints a git/backup nudge before writing. Only pages that actually change are rewritten.
 
 **Who maintains it (the key knob).** Synthesis is a reasoning task, and you choose who does it with `wiki.maintainer`:
 
@@ -437,7 +442,7 @@ holt mcp             run an MCP server so other tools use this folder's memory (
 holt hook            ambient memory for Claude Code: install | remove | status
 holt skill           manage skills: list | show | create | add | remove
 holt memory          inspect memory: holt memory [search <query> | facts | embed | clear]
-holt wiki            derived knowledge wiki: holt wiki [sync | rebuild | lint | list | show | status]
+holt wiki            derived knowledge wiki: holt wiki [sync | auto | rebuild | lint | list | show | status]
 holt setting         configure brains, API brains, and launch command
 holt login <brain>   sign in to claude, codex, or gemini
 holt version         print version

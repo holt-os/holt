@@ -28,6 +28,39 @@ function factsOf(p) {
     .map((l) => l.trim().slice(2));
 }
 
+// Lint --fix: the prompt asks us to RETURN every page between markers, fixing
+// issues. We echo each page back, but for any page whose body contains the
+// sentinel "DUPLICATE_LINE" we drop that line (simulating a de-dup fix), so the
+// applied file provably changes.
+if (/Fix quality issues across the pages/i.test(prompt)) {
+  const BEGIN = '<<<HOLT-PAGE ';
+  const END = '<<<HOLT-END>>>';
+  const out = [];
+  let i = 0;
+  while (true) {
+    const b = prompt.indexOf(BEGIN, i);
+    if (b < 0) break;
+    const slugStart = b + BEGIN.length;
+    const slugEnd = prompt.indexOf('>>>', slugStart);
+    if (slugEnd < 0) break;
+    const slug = prompt.slice(slugStart, slugEnd).trim();
+    const bodyStart = slugEnd + 3;
+    const end = prompt.indexOf(END, bodyStart);
+    if (end < 0) break;
+    let body = prompt.slice(bodyStart, end).trim();
+    // De-dup fix: remove any line that contains the DUPLICATE_LINE sentinel.
+    body = body
+      .split('\n')
+      .filter((l) => !l.includes('DUPLICATE_LINE'))
+      .join('\n')
+      .trim();
+    out.push(`${BEGIN}${slug}>>>\n${body}\n${END}`);
+    i = end + END.length;
+  }
+  process.stdout.write(out.join('\n\n') + '\n');
+  process.exit(0);
+}
+
 if (/auditing a personal knowledge wiki/i.test(prompt)) {
   process.stdout.write(
     'CONTRADICTIONS: none found.\n' +
