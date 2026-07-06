@@ -35,7 +35,11 @@ export const CACHE_TTL_MS = 60 * 60 * 1000;
 export interface RegistrySkill {
   name: string;
   description: string;
-  /** A git URL or local path, exactly what `holt skill add <source>` accepts. */
+  /**
+   * A git URL or local path, exactly what `holt skill add <source>` accepts.
+   * May include a `#<subpath>` suffix (e.g. `.../registry#skills/pm-prd`) to
+   * point at one skill folder inside a monorepo; installFromSource handles it.
+   */
   source: string;
   author: string;
   tags?: string[];

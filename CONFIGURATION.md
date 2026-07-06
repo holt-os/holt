@@ -296,7 +296,7 @@ The block is idempotent, re-running replaces it. Reset the launch word to `holt`
 }
 ```
 
-`source` is anything `holt skill add` accepts (a git URL, optionally with the `SKILL.md` in one subfolder, or a local path). Per entry, `name` and `source` are required; `description`, `author`, and `tags` are optional. Malformed rows are skipped so one bad entry never breaks the index.
+`source` is anything `holt skill add` accepts (a git URL, optionally with the `SKILL.md` in one subfolder, or a local path). It may also carry a `#<subdir>` suffix (split on the first `#`) that points at one skill folder inside the repo, e.g. `https://github.com/holt-os/registry#skills/pm-prd`. That lets one repo hold many skills, so the community registry can be a single monorepo. The subdir is validated to stay inside the source (absolute paths or `..` traversal are refused). Per entry, `name` and `source` are required; `description`, `author`, and `tags` are optional. Malformed rows are skipped so one bad entry never breaks the index.
 
 - **Location:** `HOLT_REGISTRY_URL` if set, otherwise the community index `https://raw.githubusercontent.com/holt-os/registry/main/registry.json`. The override may be a URL, a `file://` URL, or a plain filesystem path, so the registry is usable (and testable) with no network at all.
 - **Cache:** the fetched index is cached at `~/.holt/registry-cache.json` (keyed by URL) with a one-hour TTL. Within the TTL, search reuses the cache instead of re-fetching. `--refresh` forces a re-fetch; a stale cache for the same URL is used as an offline fallback if a live fetch fails. A corrupt cache is ignored, never fatal.

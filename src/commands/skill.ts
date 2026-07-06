@@ -14,7 +14,7 @@ import {
   cpSync,
   mkdtempSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { ensureTrusted } from '../workspace';
@@ -45,7 +45,7 @@ function usage(): void {
     '  holt skill show <name>              print a skill',
     '  holt skill create <name> [--global] scaffold a new skill',
     '  holt skill search <query>           find skills in the registry',
-    '  holt skill add <src|name> [--global] install from a git URL, path, or registry name',
+    '  holt skill add <src|name> [--global] install from a git URL, git-url#subdir, path, or registry name',
     '  holt skill publish [<name>]         prepare a skill for the registry (prints a PR entry)',
     '  holt skill remove <name>            delete a skill',
     '',
@@ -84,6 +84,35 @@ const SKILL_TEMPLATE = (name: string): string =>
 /** Does `s` look like a git remote rather than a local path? */
 function isGitUrl(s: string): boolean {
   return s.includes('://') || s.endsWith('.git') || s.startsWith('git@');
+}
+
+/**
+ * Split a source into its base (git URL or path) and an optional subpath on the
+ * FIRST `#`. `<source>#<subpath>` points at a skill folder inside the repo/path,
+ * so a registry can be a single monorepo. No `#` means base only, subpath ''.
+ * This split is a shared contract with the registry repo; keep it byte-exact.
+ */
+function splitSubpath(source: string): { base: string; subpath: string } {
+  const i = source.indexOf('#');
+  if (i === -1) return { base: source, subpath: '' };
+  return { base: source.slice(0, i), subpath: source.slice(i + 1) };
+}
+
+/**
+ * Resolve a `#subpath` against the fetched clone/source root, guarding against
+ * traversal (absolute path or a `..` segment that escapes the root, since a
+ * registry entry is remote-controlled input). Returns the absolute target dir,
+ * or null if the subpath is unsafe.
+ */
+function resolveSubpathDir(fetched: string, subpath: string): string | null {
+  if (isAbsolute(subpath)) return null;
+  const segments = subpath.split(/[\\/]/);
+  if (segments.some((s) => s === '..')) return null;
+  const target = resolve(fetched, subpath);
+  // Belt-and-suspenders: the resolved path must stay within `fetched`.
+  const root = resolve(fetched);
+  if (target !== root && !target.startsWith(root + sep)) return null;
+  return target;
 }
 
 /**
@@ -186,13 +215,17 @@ function cmdCreate(name: string | undefined, global: boolean): void {
  * process.exitCode on failure and returns false.
  */
 function installFromSource(source: string, scope: SkillScope): boolean {
+  // A source may carry a `#<subpath>` pointing at a skill folder inside the
+  // repo/path (so a registry can be one monorepo). Split on the FIRST `#`;
+  // clone/resolve the base exactly as before, then narrow to the subpath.
+  const { base, subpath } = splitSubpath(source);
   let fetched = ''; // directory holding the fetched source
   let tempDir = ''; // temp dir to clean up (empty if none)
   try {
-    if (isGitUrl(source)) {
+    if (isGitUrl(base)) {
       tempDir = mkdtempSync(join(tmpdir(), 'holt-skill-'));
-      console.log(c.dim(`\n  Cloning ${source} ...`));
-      const res = spawnSync('git', ['clone', '--depth', '1', source, tempDir], { stdio: 'ignore' });
+      console.log(c.dim(`\n  Cloning ${base} ...`));
+      const res = spawnSync('git', ['clone', '--depth', '1', base, tempDir], { stdio: 'ignore' });
       if (res.status !== 0) {
         console.error(c.red('  Clone failed. Check the URL and that git is installed.\n'));
         process.exitCode = 1;
@@ -200,7 +233,7 @@ function installFromSource(source: string, scope: SkillScope): boolean {
       }
       fetched = tempDir;
     } else {
-      fetched = resolve(source);
+      fetched = resolve(base);
       if (!existsSync(fetched)) {
         console.error(c.red(`\n  No such path: ${fetched}\n`));
         process.exitCode = 1;
@@ -208,9 +241,30 @@ function installFromSource(source: string, scope: SkillScope): boolean {
       }
     }
 
-    const skillDir = findSkillDir(fetched);
+    // With a subpath, the skill directory is that folder inside the source.
+    // Guard against traversal (remote-controlled input) and require a SKILL.md.
+    let searchRoot = fetched;
+    if (subpath) {
+      const target = resolveSubpathDir(fetched, subpath);
+      if (!target) {
+        console.error(c.red(`\n  Refusing unsafe subpath "${subpath}": it must stay inside the source (no absolute or "..").\n`));
+        process.exitCode = 1;
+        return false;
+      }
+      if (!existsSync(target) || !statSync(target).isDirectory()) {
+        console.error(c.red(`\n  Subpath "${subpath}" does not exist in the source.\n`));
+        process.exitCode = 1;
+        return false;
+      }
+      searchRoot = target;
+    }
+
+    const skillDir = findSkillDir(searchRoot);
     if (!skillDir) {
-      console.error(c.red('\n  Could not find a SKILL.md at the source root or in a single subfolder.\n'));
+      const where = subpath
+        ? `subpath "${subpath}"`
+        : 'the source root or in a single subfolder';
+      console.error(c.red(`\n  Could not find a SKILL.md at ${where}.\n`));
       process.exitCode = 1;
       return false;
     }
@@ -257,11 +311,14 @@ function installFromSource(source: string, scope: SkillScope): boolean {
  * same path. A name that is neither a URL/path nor in the registry is an error.
  */
 async function cmdAdd(source: string | undefined, global: boolean, refresh: boolean): Promise<void> {
-  if (!source) { console.log(c.dim('\n  Usage: holt skill add <git-url|path|name> [--global]\n')); return; }
+  if (!source) { console.log(c.dim('\n  Usage: holt skill add <git-url|git-url#subdir|path|name> [--global]\n')); return; }
   const scope: SkillScope = global ? 'global' : 'workspace';
 
   // A URL or an existing path is a direct source: install exactly as before.
-  if (isGitUrl(source) || existsSync(resolve(source))) {
+  // Detect on the base (before any `#subpath`) so "path#skills/foo" also routes
+  // here rather than being misread as a registry name.
+  const { base } = splitSubpath(source);
+  if (isGitUrl(base) || existsSync(resolve(base))) {
     installFromSource(source, scope);
     return;
   }
