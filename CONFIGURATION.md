@@ -103,6 +103,16 @@ Privacy is a hard rule: the interview only ever asks about writing and communica
 - `holt write` composes `style` (plus any stored excerpts) with a generic anti-AI rubric and your request, then runs your default brain. A second self-check pass fixes any tells unless you pass `--fast`. Generated output is always em-dash free.
 - Remove the profile with `holt voice clear` (the file is overwritten then deleted so no excerpt lingers).
 
+## Skill scopes: builtin, global, workspace
+
+A skill is a folder with a `SKILL.md` (YAML `name` + `description`, then Markdown instructions). Holt discovers skills from three scopes, listed here from lowest to highest precedence:
+
+- **builtin**: a read-only, curated set that ships **inside the Holt package** (at `<package-root>/skills/`, resolved from Holt's own module location so it works both installed and in dev). These are available in every folder with no setup. They cannot be created, added, or removed by the skill commands: `holt skill remove <builtin>` refuses with a clear message, and `holt skill create` / `holt skill add` only ever write to the workspace or global scope, never into the package.
+- **global**: your personal skills at `~/.holt/skills/`, available in every folder. Install or scaffold with the `--global` flag.
+- **workspace**: this folder's skills at `./.holt/skills/`. The default target for `holt skill create` / `holt skill add`.
+
+Precedence is **workspace > global > builtin**: on a name clash the workspace copy wins, then global, then builtin. So you can override any built-in skill simply by creating a workspace or global skill with the same name; it takes over in `holt skill list`, `holt skill show`, and `/skill <name>`. Delete that override and the built-in one returns.
+
 ## Global trust list: `~/.holt/trust.json`
 
 The one global file. It lists the absolute paths of folders you have trusted. Holt refuses to read or write in a folder that is not in this list until you approve it.

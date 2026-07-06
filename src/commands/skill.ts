@@ -117,7 +117,7 @@ function cmdList(): void {
   }
   const nameW = Math.max(4, ...skills.map((s) => s.name.length));
   const scopeW = Math.max(5, ...skills.map((s) => s.scope.length));
-  console.log('\n' + c.accent('Skills') + c.dim('  (workspace shadows global on name clash)'));
+  console.log('\n' + c.accent('Skills') + c.dim('  (workspace shadows global shadows builtin on name clash)'));
   console.log(
     '  ' +
       c.dim('name'.padEnd(nameW)) +
@@ -128,11 +128,17 @@ function cmdList(): void {
   );
   for (const s of skills) {
     const desc = s.description.length > 68 ? s.description.slice(0, 67) + '…' : s.description;
+    const scopeCol =
+      s.scope === 'workspace'
+        ? c.cyan(s.scope.padEnd(scopeW))
+        : s.scope === 'builtin'
+          ? c.accent(s.scope.padEnd(scopeW))
+          : c.dim(s.scope.padEnd(scopeW));
     console.log(
       '  ' +
         c.bold(s.name.padEnd(nameW)) +
         '  ' +
-        (s.scope === 'workspace' ? c.cyan(s.scope.padEnd(scopeW)) : c.dim(s.scope.padEnd(scopeW))) +
+        scopeCol +
         '  ' +
         (desc || c.dim('(no description)')),
     );
@@ -403,7 +409,18 @@ async function cmdRemove(name: string | undefined, ask: (q: string) => Promise<s
   const wsDir = join(skillsRoot('workspace'), clean);
   const globalDir = join(skillsRoot('global'), clean);
   const target = existsSync(wsDir) ? wsDir : existsSync(globalDir) ? globalDir : '';
-  if (!target) { console.error(c.dim(`\n  No skill named "${clean}" found.\n`)); process.exitCode = 1; return; }
+  if (!target) {
+    // A built-in skill ships inside the Holt package and cannot be removed.
+    if (existsSync(join(skillsRoot('builtin'), clean))) {
+      console.error(c.red(`\n  "${clean}" is a built-in skill and cannot be removed; it ships inside Holt.`));
+      console.error(c.dim('  Override it instead: create a workspace or global skill with the same name.\n'));
+      process.exitCode = 1;
+      return;
+    }
+    console.error(c.dim(`\n  No skill named "${clean}" found.\n`));
+    process.exitCode = 1;
+    return;
+  }
   const scope = target === wsDir ? 'workspace' : 'global';
   const a = ((await ask(`\n  Delete ${scope} skill "${clean}"? [y/N] `)) ?? '').trim().toLowerCase();
   if (a === 'y' || a === 'yes') {

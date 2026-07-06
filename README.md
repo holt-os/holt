@@ -206,7 +206,7 @@ Wiki pages also participate in recall: each page is embedded and indexed like a 
 
 A skill is a folder with a `SKILL.md`: YAML frontmatter (`name`, `description`) plus Markdown instructions. Same convention as agentskills.io and Claude Code, so skills are portable both ways. Skills are prompt text only; Holt never executes their contents.
 
-Holt looks in two places (workspace wins on a name clash): `./.holt/skills/` for this folder, `~/.holt/skills/` for every folder (`--global`).
+Holt looks in three places, in precedence order (workspace shadows global shadows builtin on a name clash): `./.holt/skills/` for this folder, `~/.holt/skills/` for every folder (`--global`), and a read-only set of **built-in skills** that ship inside Holt and are available in every folder out of the box.
 
 ```
 holt skill list                        list installed skills
@@ -219,6 +219,21 @@ holt skill remove <name>               delete a skill
 ```
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
+
+### Built-in skills
+
+Holt ships with a small, curated set of general-purpose skills, available in every folder with no setup. They are read-only (`holt skill remove` will not delete them); to change one, create a workspace or global skill with the same name and it takes over.
+
+- **summarize**: condense a document, article, transcript, or pasted text into its key points.
+- **explain**: explain a concept, error message, or piece of jargon in plain language.
+- **action-items**: pull decisions, tasks, and owners out of messy notes or a meeting transcript.
+- **brief**: a short briefing on the state of the current folder, using recalled memory plus your input.
+- **code-review**: review a file or a diff for correctness bugs, edge cases, and simplifications.
+- **explain-code**: walk through what a file or function does and how it fits into the wider system.
+- **commit**: draft a clear commit message from staged changes or a described change.
+- **plan**: break a goal into a concrete, ordered set of steps.
+- **rewrite**: tighten and clarify a piece of text without changing its meaning.
+- **decide**: weigh a decision and give a clear recommendation.
 
 ### Skill registry (`holt skill search` / `publish`)
 
