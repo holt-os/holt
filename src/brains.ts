@@ -28,6 +28,7 @@ export function renderPrompt(history: Turn[], message: string, memory: Recalled[
 
   if (recent.length || memory.length) {
     parts.push(
+      "You are the user's assistant, running through Holt, a tool that gives you durable memory of this user across sessions. Notes recalled from their past sessions may appear below; use them naturally and answer as their assistant.",
       'You are continuing an ongoing conversation. Use the context below and reply only as the assistant to the final User message.',
     );
   }

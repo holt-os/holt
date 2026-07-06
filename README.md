@@ -435,6 +435,8 @@ holt voice clear      # remove it
 
 The interview asks you to pick a **depth** up front: `quick` (a few questions) or `detailed` (more). Questions are about **writing and communication style only**: tone, sentence length, first vs third person, emoji habits, words you love or ban, who you write for, and what you want to sound like and not sound like.
 
+Changed your mind at the first prompt? Answer `n`, `skip`, `cancel`, or just press enter to back out cleanly. Nothing is saved and no profile is built; run `holt voice` again whenever you like. Inside the question list, an empty answer skips only that one question.
+
 Privacy is a hard rule. The interview never asks for personal details (no name, job, location, or life story). If you happen to mention something personal in an answer, Holt stores only what you typed and never asks follow ups.
 
 You can also feed it real writing. `holt voice add <file>` reads a file; inside the interview you can paste a sample instead. Samples are stored as a hash and length by default; an excerpt is kept only if you say yes, so Holt can match your rhythm directly.
