@@ -188,14 +188,45 @@ A skill is a folder with a `SKILL.md`: YAML frontmatter (`name`, `description`) 
 Holt looks in two places (workspace wins on a name clash): `./.holt/skills/` for this folder, `~/.holt/skills/` for every folder (`--global`).
 
 ```
-holt skill list                       list installed skills
-holt skill show <name>                print a skill
-holt skill create <name> [--global]   scaffold a new skill
-holt skill add <src> [--global]       install from a git URL or local path
-holt skill remove <name>              delete a skill
+holt skill list                        list installed skills
+holt skill show <name>                 print a skill
+holt skill create <name> [--global]    scaffold a new skill
+holt skill search <query>              find skills in the registry
+holt skill add <src|name> [--global]   install from a git URL, path, or registry name
+holt skill publish [<name>]            prepare a skill for the registry (prints a PR entry)
+holt skill remove <name>               delete a skill
 ```
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
+
+### Skill registry (`holt skill search` / `publish`)
+
+Beyond pasting URLs, Holt can discover and share skills through a **git-based registry**: a single JSON index living in a git repo. No server, no infra, in keeping with the rest of Holt.
+
+The index is a JSON document:
+
+```json
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "hello-registry",
+      "description": "A tiny demo skill.",
+      "source": "https://github.com/you/hello-registry.git",
+      "author": "you",
+      "tags": ["demo"]
+    }
+  ]
+}
+```
+
+`source` is anything `holt skill add` already accepts: a git URL (its `SKILL.md` may sit in one subfolder) or a local path. `tags` is optional. Only `name` and `source` are required per entry; malformed rows are skipped rather than failing the whole index.
+
+- **Find:** `holt skill search <query>` fetches the index and lists skills whose name, description, or tags match (case-insensitive substring, name matches first). An empty query lists everything. It prints name, author, description, and source.
+- **Install by name:** `holt skill add <name>` resolves the name in the registry to its `source`, then installs through the exact same clone/copy path as `holt skill add <url|path>`. A git URL or an existing local path is still installed directly, unchanged.
+- **Publish (zero-infra):** `holt skill publish [<name>]` validates a skill's `SKILL.md` (needs a `name` and `description`) and prints the exact JSON entry plus instructions to open a PR against the community registry repo. Holt never pushes anywhere; you add the entry via a pull request. With no name, it publishes the `SKILL.md` in the current directory.
+
+The default index is the community registry (`https://raw.githubusercontent.com/holt-os/registry/main/registry.json`). Override it with `HOLT_REGISTRY_URL` (a URL, a `file://` URL, or a plain path) to point at your own index or a local file. The fetched index is cached at `~/.holt/registry-cache.json` for one hour; `--refresh` forces a re-fetch. If no registry is reachable (for example, the community index is not live yet), search and install-by-name fail cleanly with a clear message rather than crashing.
 
 ## Use Holt from your other tools (MCP)
 
