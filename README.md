@@ -213,10 +213,12 @@ holt skill list                        list installed skills
 holt skill show <name>                 print a skill
 holt skill create <name> [--global]    scaffold a new skill
 holt skill search <query>              find skills in the registry
-holt skill add <src|name> [--global]   install from a git URL, path, or registry name
+holt skill add <src|name> [--global]   install from a git URL, git-url#subdir, path, or registry name
 holt skill publish [<name>]            prepare a skill for the registry (prints a PR entry)
 holt skill remove <name>               delete a skill
 ```
+
+A source may carry a `#<subdir>` suffix (split on the first `#`) that points at one skill folder inside a repo or path: `holt skill add https://github.com/holt-os/registry#skills/pm-prd`. The subdir is a path, relative to the source root, that contains a `SKILL.md`. This lets a single repo hold many skills (one monorepo), which is exactly how the community registry is laid out. The subdir is validated to stay inside the source (absolute paths and `..` traversal are refused), since a registry entry is remote-controlled. Without a `#`, behaviour is unchanged: Holt looks for a `SKILL.md` at the source root or in exactly one immediate subfolder.
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
 
@@ -256,7 +258,7 @@ The index is a JSON document:
 }
 ```
 
-`source` is anything `holt skill add` already accepts: a git URL (its `SKILL.md` may sit in one subfolder) or a local path. `tags` is optional. Only `name` and `source` are required per entry; malformed rows are skipped rather than failing the whole index.
+`source` is anything `holt skill add` already accepts: a git URL (its `SKILL.md` may sit in one subfolder), a local path, or either of those with a `#<subdir>` suffix pointing at one skill folder inside the repo. That last form lets one repo hold many skills, so the community registry can be a single monorepo (e.g. `"source": "https://github.com/holt-os/registry#skills/pm-prd"`). `tags` is optional. Only `name` and `source` are required per entry; malformed rows are skipped rather than failing the whole index.
 
 - **Find:** `holt skill search <query>` fetches the index and lists skills whose name, description, or tags match (case-insensitive substring, name matches first). An empty query lists everything. It prints name, author, description, and source.
 - **Install by name:** `holt skill add <name>` resolves the name in the registry to its `source`, then installs through the exact same clone/copy path as `holt skill add <url|path>`. A git URL or an existing local path is still installed directly, unchanged.
