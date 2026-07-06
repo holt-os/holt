@@ -50,11 +50,33 @@ const QUESTIONS: Question[] = [
   { key: 'signature', q: 'Any signature moves? (openings you like, how you end, humor, analogies)', depth: 'detailed' },
 ];
 
-/** Ask the depth up front. Defaults to quick. Returns null on EOF. */
+/**
+ * Skip/cancel intent at an entry or depth prompt. Case-insensitive, trimmed.
+ * `null` (EOF) also counts as skip. Empty string means "no, skip" here, which
+ * is why this guard is only used at cancel-friendly prompts (not inside the
+ * question loop, where empty means "skip this one question").
+ */
+function isSkip(a: string | null): boolean {
+  if (a === null) return true;
+  const s = a.trim().toLowerCase();
+  return s === '' || s === 'n' || s === 'no' || s === 'skip' || s === 'cancel' || s === 'q' || s === 'quit';
+}
+
+/** Print the standard skip notice and return. Writes nothing to disk. */
+function skipNotice(): void {
+  console.log(c.dim('\n  Skipped. Run ') + c.accent('holt voice') + c.dim(' anytime.\n'));
+}
+
+/**
+ * Ask the depth up front. Empty means the "quick" default (a genuine path).
+ * An explicit skip/cancel word or EOF returns null so the caller can abort.
+ */
 async function askDepth(ask: Ask): Promise<'quick' | 'detailed' | null> {
   const a = await ask('Depth? "quick" (a few questions) or "detailed" (more): [quick] ');
-  if (a === null) return null;
+  if (a === null) return null; // EOF
   const s = a.trim().toLowerCase();
+  // Explicit cancel words abort; empty is the quick default, not a skip here.
+  if (s === 'n' || s === 'no' || s === 'skip' || s === 'cancel' || s === 'q' || s === 'quit') return null;
   return s === 'detailed' || s === 'd' ? 'detailed' : 'quick';
 }
 
@@ -204,13 +226,19 @@ export async function voiceInterview(): Promise<void> {
   console.log('\n' + c.accent('Teach Holt your writing voice'));
   console.log(c.dim('  Style only. No personal questions. You can do the interview, share samples, or both.\n'));
 
-  const mode = ((await ask('Do the [i]nterview, add [s]amples, or [b]oth? [i] ')) ?? '').trim().toLowerCase();
-  const wantInterview = mode === '' || mode === 'i' || mode === 'b' || mode === 'interview' || mode === 'both';
+  const modeRaw = await ask('Do the [i]nterview, add [s]amples, or [b]oth? [i] ');
+  // Skip/cancel at the entry prompt aborts cleanly and writes nothing.
+  if (isSkip(modeRaw)) { close(); skipNotice(); return; }
+  const mode = (modeRaw ?? '').trim().toLowerCase();
+  const wantInterview = mode === 'i' || mode === 'b' || mode === 'interview' || mode === 'both';
   const wantSamples = mode === 's' || mode === 'b' || mode === 'samples' || mode === 'both';
+  // An unrecognized non-skip answer defaults to the interview (old behavior).
+  const wantInterviewOrDefault = wantInterview || !wantSamples;
 
-  if (wantInterview) {
+  if (wantInterviewOrDefault) {
     const depth = await askDepth(ask);
-    if (depth === null) { close(); return; }
+    // Skip/cancel at the depth prompt also aborts without writing a profile.
+    if (depth === null) { close(); skipNotice(); return; }
     v.depth = depth;
     const answers = await runQuestions(ask, depth);
     // Merge: replace answers for keys we just asked, keep any older ones.
@@ -236,6 +264,14 @@ export async function voiceInterview(): Promise<void> {
 
   // Release stdin before the (streaming-capable) brain call.
   close();
+
+  // Nothing meaningful was gathered (no real answers, no samples). Do not
+  // synthesize a junk profile from an empty interview, and write nothing.
+  const gotAnswers = v.answers.some((a) => a.answer.trim());
+  if (!gotAnswers && v.samples.length === 0) {
+    skipNotice();
+    return;
+  }
 
   saveVoice(v);
   console.log(c.dim('\n  Building your style profile from a brain...'));
