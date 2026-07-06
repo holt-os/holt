@@ -149,6 +149,22 @@ A brain can also be a direct provider connection: no CLI install, your own key. 
 
 Options: `--out <path>` to write elsewhere, `--no-open` to skip the browser. When a wiki exists (see below), the graph auto-includes wiki pages as green nodes wired by their `[[links]]`; force it on or off with `--wiki` / `--no-wiki`. This is the graph as a view over your wiki.
 
+### Richer graph: code, docs, and communities
+
+Plain `holt graph` is unchanged: it draws this folder's memory (plus the wiki when one exists). To also see the folder's *own source and docs* as a graph, opt in with flags:
+
+- `holt graph --code` walks the folder and adds a node per source file (orange), with dependency edges from the imports it can resolve.
+- `holt graph --docs` adds a node per doc (blue: `.md` / `.mdx` / `.txt` / `.rst`), with edges from Markdown links and `[[wikilinks]]` between them.
+- `holt graph --all` does both. All three still render the memory + wiki graph too, so code, docs, and memory sit in one picture.
+
+**What gets ingested.** The walk skips `node_modules`, `.git`, `.holt`, `dist`, `build`, `.next`, `coverage`, other build/vendor dirs, and any dotfolder. It caps out at 2000 files and 400KB per file for safety, and logs what it skipped. Code files (`js`, `ts`, `jsx`, `tsx`, `mjs`, `cjs`, `py`, `go`, `rb`, `rs`, `java`, and more) become file nodes. Dependency edges are best-effort per language: for JS/TS it reads `import ... from`, `export ... from`, `require()`, and dynamic `import()`, resolving only *relative* specifiers (`./`, `../`) to files in the set (trying common extensions and `index.*`); bare/package imports (`react`, `node:fs`) are intentionally dropped. For Python it maps `import x` and `from x import ...` to local module files where they resolve. Unresolved imports are silently dropped, never fatal.
+
+**Communities.** Once code or docs are ingested, Holt runs **label propagation** (a deterministic, zero-dependency community-detection algorithm) over the whole graph and tints each node's ring by its community, so tightly-coupled files cluster visibly. (Label propagation was chosen over Louvain because it is near-linear, trivially deterministic in stable node order, and keeps the code tiny.)
+
+### God-node report: `holt graph report`
+
+`holt graph report` ingests this folder's code and docs, detects communities, and writes a `GRAPH_REPORT.md` (use `--out <path>` to write elsewhere). The report summarizes node / edge / community counts, lists the **god nodes** (highest-degree files: your core abstractions) with their community, and gives a per-community summary (size + representative files). It is safe on an empty folder (it says so, no crash). This is the graphify-grade view of a codebase, generated natively in TypeScript with zero dependencies.
+
 ## Knowledge wiki: `holt wiki`
 
 Memory has three layers, each derived from the one below it:
@@ -438,6 +454,8 @@ holt doctor          check this machine and recommend how best to run Holt here
 holt voice           teach Holt your writing voice: add <file> | show | edit | clear
 holt write <what>    draft content in your voice with anti-AI checks (--type, --out, --fast)
 holt graph           see your memory as an interactive knowledge graph
+                     (--code / --docs / --all to ingest this folder's code + docs;
+                      "holt graph report" writes GRAPH_REPORT.md)
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt hook            ambient memory for Claude Code: install | remove | status
 holt skill           manage skills: list | show | create | add | remove
