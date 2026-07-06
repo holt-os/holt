@@ -10,18 +10,22 @@ import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills
 import { runSettings } from './setting';
 import { init } from './init';
 import { ensureTrusted } from '../workspace';
-import { c, createReader, bar } from '../ui';
+import { c, createReader, createStatusBar, bar } from '../ui';
 
-/** A one-line status bar: brain, a live-context fill bar, and memory size. */
+/**
+ * A one-line status bar: brain, the recent-replay window as a count, and the
+ * saved-memory size. The fill bar maps directly to "recent N/12" (how much of
+ * the verbatim replay window is in use). This is NOT the model's context
+ * window: Holt sends a small prompt each turn, so real context usage stays low.
+ */
 function statusLine(brainLabel: string, history: Turn[]): string {
   const live = Math.min(history.length, MAX_REPLAY_TURNS);
   const frac = MAX_REPLAY_TURNS ? live / MAX_REPLAY_TURNS : 0;
-  const pct = Math.round(frac * 100);
   const mem = memStats().turns;
   return (
     c.dim('  ' + brainLabel + '  ') +
     c.dim('[') + bar(frac) + c.dim(']') +
-    c.dim(`  ${pct}% context  ·  ${mem} in memory`)
+    c.dim(`  recent ${live}/${MAX_REPLAY_TURNS}  ·  ${mem} in memory`)
   );
 }
 
@@ -83,6 +87,16 @@ export async function chat(): Promise<void> {
   const history: Turn[] = [];
   let lastReply = '';
 
+  // Sticky bottom status bar on a TTY; a printed line per reply otherwise. The
+  // sticky bar redraws in place (no scroll-spam); the non-TTY path preserves the
+  // original behavior exactly, so piped/CI runs emit no escape codes.
+  const sb = createStatusBar();
+  const showStatus = (): void => {
+    const line = statusLine(active!.label, history);
+    if (sb.active) sb.set(line);
+    else console.log(line + '\n');
+  };
+
   const embedOk = await embeddingsAvailable();
   const stats = memStats();
   console.log('\n' + c.accent('Holt') + c.dim(`  brain: ${active.label}`));
@@ -94,7 +108,7 @@ export async function chat(): Promise<void> {
     console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
   }
   console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /setting  /clear  /help  /exit'));
-  console.log(statusLine(active.label, history) + '\n');
+  showStatus();
 
   while (true) {
     const raw = await ask(c.accent('› '));
@@ -243,11 +257,16 @@ export async function chat(): Promise<void> {
       const now = Date.now();
       appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'user', content: line, emb: (await embed(line)) ?? undefined });
       appendTurn({ id: randomUUID().slice(0, 8), ts: now, session, role: 'assistant', content: res.text, emb: (await embed(res.text)) ?? undefined });
-      console.log(statusLine(active.label, history) + '\n');
+      showStatus();
     } else {
       console.log(c.red('\n  ' + res.text + '\n'));
     }
   }
+
+  // Leaving the REPL: tear down the sticky bar first so the closing messages
+  // (fact distillation, wiki sync, "Bye.") print on a clean, full-height screen
+  // with the cursor restored. No-op on the non-TTY path.
+  sb.detach();
 
   // Distill durable facts from this session before leaving. Silent, best-effort,
   // and never blocks exit: any failure is swallowed inside extractAndSaveFacts.
