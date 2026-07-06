@@ -7,7 +7,12 @@ import { join, dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { loadTurns } from '../memory';
 import { ensureTrusted, wsHoltDir, workspace } from '../workspace';
-import { buildGraph, buildWikiGraph, mergeGraphs, renderGraphHtml, type WikiGraphPage } from '../graphview';
+import {
+  buildGraph, buildWikiGraph, buildCodeGraph, assignCommunities, mergeGraphs,
+  renderGraphHtml, type Graph, type WikiGraphPage,
+} from '../graphview';
+import { ingestFolder } from '../ingest';
+import { renderReport } from '../graphreport';
 import { wikiDir, loadPages, extractLinks } from '../wiki';
 import { c, createReader } from '../ui';
 
@@ -15,15 +20,23 @@ interface Opts {
   out?: string;
   open: boolean;
   wiki?: boolean; // undefined = auto (include when .holt/wiki exists)
+  code: boolean;  // ingest code files
+  docs: boolean;  // ingest doc files
+  report: boolean; // write GRAPH_REPORT.md instead of / in addition to HTML
 }
 
 function parseArgs(args: string[]): Opts {
-  const opts: Opts = { open: true };
+  const opts: Opts = { open: true, code: false, docs: false, report: false };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--no-open') opts.open = false;
+    if (a === 'report') opts.report = true; // subcommand form: holt graph report
+    else if (a === '--no-open') opts.open = false;
     else if (a === '--wiki') opts.wiki = true;
     else if (a === '--no-wiki') opts.wiki = false;
+    else if (a === '--code') opts.code = true;
+    else if (a === '--docs') opts.docs = true;
+    else if (a === '--all') { opts.code = true; opts.docs = true; }
+    else if (a === '--report') opts.report = true;
     else if (a === '--out') opts.out = args[++i];
     else if (a && a.startsWith('--out=')) opts.out = a.slice('--out='.length);
   }
@@ -58,19 +71,66 @@ export async function graph(args: string[] = []): Promise<void> {
   close();
 
   const opts = parseArgs(args);
+
+  // `holt graph report` with no explicit --code/--docs ingests both: a report
+  // over the folder's code+docs is the point. The plain interactive view stays
+  // memory-only unless code/docs are opted in.
+  if (opts.report && !opts.code && !opts.docs) { opts.code = true; opts.docs = true; }
+  const ingestCode = opts.code;
+  const ingestDocs = opts.docs;
+
   const turns = loadTurns();
 
   // Auto-include the wiki when it exists, unless the flag forces it on/off.
   const includeWiki = opts.wiki !== undefined ? opts.wiki : existsSync(wikiDir());
   const wikiPages = includeWiki ? wikiGraphPages() : [];
 
-  if (turns.length === 0 && wikiPages.length === 0) {
+  // Ingest code/docs from the current folder when asked.
+  let fileNodeCount = 0;
+  let docNodeCount = 0;
+  let codeGraph: Graph | null = null;
+  if (ingestCode || ingestDocs) {
+    const res = ingestFolder(workspace(), { code: ingestCode, docs: ingestDocs });
+    codeGraph = buildCodeGraph(res.files, res.edges);
+    fileNodeCount = codeGraph.nodes.filter((n) => n.kind === 'file').length;
+    docNodeCount = codeGraph.nodes.filter((n) => n.kind === 'doc').length;
+    const skipNotes: string[] = [];
+    if (res.skipped.dirs) skipNotes.push(`${res.skipped.dirs} dirs`);
+    if (res.skipped.tooBig) skipNotes.push(`${res.skipped.tooBig} too-big`);
+    if (res.skipped.unreadable) skipNotes.push(`${res.skipped.unreadable} unreadable`);
+    if (res.skipped.hitFileCap) skipNotes.push('file cap hit');
+    if (res.skipped.hitByteCap) skipNotes.push('byte cap hit');
+    if (skipNotes.length) console.log(c.dim(`  ingest skipped: ${skipNotes.join(', ')}`));
+  }
+
+  if (turns.length === 0 && wikiPages.length === 0 && !codeGraph) {
     console.log(c.dim('\n  No memory in this folder yet. Have a chat first with "holt chat", then come back.\n'));
+    console.log(c.dim('  Or ingest this folder\'s code/docs: "holt graph --code" / "holt graph --docs".\n'));
     return;
   }
 
   let g = buildGraph(turns);
   if (wikiPages.length) g = mergeGraphs(g, buildWikiGraph(wikiPages));
+  if (codeGraph) g = mergeGraphs(g, codeGraph);
+
+  // Community detection over the whole graph (drives coloring + the report).
+  // Only meaningful once code/docs are ingested; harmless otherwise.
+  if (codeGraph) assignCommunities(g);
+
+  // ---- report path: write GRAPH_REPORT.md ----
+  if (opts.report) {
+    const md = renderReport(g, { workspace: workspace() });
+    const reportPath = opts.out ? resolve(opts.out) : join(workspace(), 'GRAPH_REPORT.md');
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, md, 'utf8');
+    const communities = new Set(g.nodes.map((n) => n.community ?? '0')).size;
+    console.log('\n' + c.accent('Graph report written') + c.dim('  (this folder)'));
+    console.log(`  nodes        ${g.nodes.length}  (${fileNodeCount} files, ${docNodeCount} docs)`);
+    console.log(`  edges        ${g.edges.length}`);
+    console.log(`  communities  ${g.nodes.length ? communities : 0}`);
+    console.log(`  file         ${reportPath}\n`);
+    return;
+  }
 
   const conceptCount = g.nodes.filter((n) => n.kind === 'concept').length;
   const wikiCount = g.nodes.filter((n) => n.kind === 'wiki').length;
@@ -91,6 +151,8 @@ export async function graph(args: string[] = []): Promise<void> {
   console.log('\n' + c.accent('Memory graph built') + c.dim('  (this folder)'));
   const parts = [`${turns.length} turns`, `${conceptCount} concepts`];
   if (wikiCount) parts.push(`${wikiCount} wiki pages`);
+  if (fileNodeCount) parts.push(`${fileNodeCount} code files`);
+  if (docNodeCount) parts.push(`${docNodeCount} docs`);
   console.log(`  nodes    ${g.nodes.length}  (${parts.join(', ')})`);
   console.log(`  edges    ${g.edges.length}`);
   console.log(`  file     ${outPath}`);

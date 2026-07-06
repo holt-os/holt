@@ -5,8 +5,10 @@
  * JS, no CDN, no external fonts, zero runtime deps). The browser does the physics.
  */
 import type { MemTurn } from './memory';
+import type { IngestFile, IngestEdge } from './ingest';
+import { detectCommunities } from './communities';
 
-export type NodeKind = 'turn' | 'concept' | 'wiki';
+export type NodeKind = 'turn' | 'concept' | 'wiki' | 'file' | 'doc';
 
 export interface GraphNode {
   id: string;
@@ -19,9 +21,17 @@ export interface GraphNode {
   content?: string;
   // concept-only
   freq?: number;
+  // file/doc-only (from ingest)
+  path?: string;    // workspace-relative path
+  ext?: string;     // file extension (no dot)
+  topDir?: string;  // top-level directory, layout + community hint
+  snippet?: string; // short, escaped preview of file content
+  // set by community detection; used for tinting nodes by cluster
+  community?: string;
+  degree?: number;  // precomputed degree (for reports; the view recomputes its own)
 }
 
-export type EdgeKind = 'sequential' | 'semantic' | 'concept' | 'wikilink';
+export type EdgeKind = 'sequential' | 'semantic' | 'concept' | 'wikilink' | 'dep' | 'link';
 
 export interface GraphEdge {
   source: string;
@@ -222,6 +232,69 @@ export function mergeGraphs(a: Graph, b: Graph): Graph {
   return { nodes, edges: [...a.edges, ...b.edges] };
 }
 
+/**
+ * Build a graph from ingested code + docs. Additive: node ids are the
+ * workspace-relative file paths (which never collide with turn/concept/wiki ids
+ * because those are uuids or "concept:"/"wiki:" prefixed), so this merges cleanly
+ * with a memory graph via mergeGraphs(). Code files become 'file' nodes, docs
+ * become 'doc' nodes; 'dep' and 'link' edges connect them.
+ */
+export function buildCodeGraph(files: IngestFile[], edges: IngestEdge[]): Graph {
+  const nodes: GraphNode[] = [];
+  const ids = new Set(files.map((f) => f.id));
+  for (const f of files) {
+    // Short, single-line preview for the tooltip/panel (escaped at render time).
+    const snippet = f.content.replace(/\s+/g, ' ').trim().slice(0, 180);
+    nodes.push({
+      id: f.id,
+      kind: f.kind === 'code' ? 'file' : 'doc',
+      label: shortPath(f.id),
+      path: f.id,
+      ext: f.ext,
+      topDir: f.topDir,
+      snippet,
+    });
+  }
+  const out: GraphEdge[] = [];
+  for (const e of edges) {
+    if (!ids.has(e.source) || !ids.has(e.target)) continue; // never dangle
+    out.push({ source: e.source, target: e.target, kind: e.kind, width: e.kind === 'dep' ? 1.5 : 1.5 });
+  }
+  return { nodes, edges: out };
+}
+
+/** Last two path segments, so long paths stay readable as node labels. */
+function shortPath(p: string): string {
+  const parts = p.split('/');
+  return parts.length <= 2 ? p : parts.slice(-2).join('/');
+}
+
+/**
+ * Run community detection over the whole graph and stamp each node with its
+ * community id (mutates nodes in place, returns the same graph for chaining).
+ * Also stamps a precomputed degree on each node for report use. Safe on empty.
+ */
+export function assignCommunities(graph: Graph): Graph {
+  const nodeIds = graph.nodes.map((n) => n.id);
+  const idSet = new Set(nodeIds);
+  const edges = graph.edges
+    .filter((e) => idSet.has(e.source) && idSet.has(e.target))
+    .map((e) => ({ source: e.source, target: e.target }));
+  const { community } = detectCommunities({ nodeIds, edges });
+
+  const degree = new Map<string, number>();
+  for (const id of nodeIds) degree.set(id, 0);
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) || 0) + 1);
+    degree.set(e.target, (degree.get(e.target) || 0) + 1);
+  }
+  for (const n of graph.nodes) {
+    n.community = community.get(n.id);
+    n.degree = degree.get(n.id) || 0;
+  }
+  return graph;
+}
+
 /** Escape a string so it can sit safely inside a JSON <script> block. */
 function escapeForScript(json: string): string {
   // The JSON is already valid; the only sequence that can break out of a
@@ -342,7 +415,9 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   <div class="row"><span class="swatch" style="background:var(--cyan)"></span>assistant</div>
   <div class="row"><span class="swatch" style="background:var(--violet)"></span>concept</div>
   <div class="row"><span class="swatch" style="background:#5bd66f"></span>wiki page</div>
-  <div class="row"><span class="swatch" style="background:var(--line);border:1px solid var(--muted)"></span>ring = session</div>
+  <div class="row"><span class="swatch" style="background:#e2704a"></span>code file</div>
+  <div class="row"><span class="swatch" style="background:#4a90d9"></span>doc file</div>
+  <div class="row"><span class="swatch" style="background:var(--line);border:1px solid var(--muted)"></span>ring = session / community</div>
 </div>
 <div id="hint">drag to pan &middot; wheel to zoom &middot; click a node &middot; Esc to clear</div>
 <div id="empty">This graph has no nodes yet.</div>
@@ -392,8 +467,15 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   });
 
   function radiusOf(n) {
-    var base = n.kind === "concept" ? 3 : n.kind === "wiki" ? 6 : 5;
+    var base = n.kind === "concept" ? 3 : n.kind === "wiki" ? 6 : (n.kind === "file" || n.kind === "doc") ? 5 : 5;
     return base + Math.min(9, Math.sqrt(n._deg) * 1.6);
+  }
+
+  // ---- community tint: a stable hue per community id ----
+  function communityHue(cid) {
+    var k = parseInt(cid, 10);
+    if (isNaN(k)) k = 0;
+    return (k * 137.508) % 360; // golden-angle spread, same trick as sessions
   }
 
   // ---- initial layout: spread on a spiral so physics has somewhere to start ----
@@ -407,7 +489,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
 
   // ---- physics ----
   var REPULSION = 5200, SPRING = 0.02, GRAVITY = 0.015, DAMP = 0.86;
-  var restLen = { sequential: 60, semantic: 45, concept: 70 };
+  var restLen = { sequential: 60, semantic: 45, concept: 70, dep: 55, link: 55, wikilink: 55 };
 
   function step() {
     var i, j, n, m, dx, dy, d2, d, f;
@@ -473,12 +555,14 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
   function roleColor(n) {
     if (n.kind === "wiki") return "#5bd66f";
     if (n.kind === "concept") return "#9a8cff";
+    if (n.kind === "file") return "#e2704a";
+    if (n.kind === "doc") return "#4a90d9";
     return n.role === "user" ? "#f0b91e" : "#35d0d6";
   }
 
   function matchesQuery(n) {
     if (!query) return false;
-    var hay = (n.label || "") + " " + (n.content || "");
+    var hay = (n.label || "") + " " + (n.content || "") + " " + (n.path || "") + " " + (n.snippet || "");
     return hay.toLowerCase().indexOf(query) >= 0;
   }
 
@@ -498,7 +582,7 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
       }
       ctx.globalAlpha = dim;
       ctx.lineWidth = Math.max(0.4, lk.width * view.scale * 0.5);
-      ctx.strokeStyle = lk.kind === "semantic" ? "#35d0d6" : lk.kind === "concept" ? "#9a8cff" : lk.kind === "wikilink" ? "#5bd66f" : "#4a5262";
+      ctx.strokeStyle = lk.kind === "semantic" ? "#35d0d6" : lk.kind === "concept" ? "#9a8cff" : lk.kind === "wikilink" ? "#5bd66f" : lk.kind === "dep" ? "#e2704a" : lk.kind === "link" ? "#4a90d9" : "#4a5262";
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -512,12 +596,17 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
       var faded = (highlightSet && !highlightSet.has(n.id)) || (query && !matchesQuery(n));
       ctx.globalAlpha = faded ? 0.18 : 1;
 
-      // session ring
+      // session ring (turns) or community ring (files/docs)
       if (n.kind === "turn") {
         ctx.beginPath();
         ctx.arc(p.x, p.y, r + 2.4, 0, Math.PI * 2);
         ctx.strokeStyle = "hsl(" + sessionHue(n.session) + ",70%,58%)";
         ctx.lineWidth = 1.6; ctx.stroke();
+      } else if ((n.kind === "file" || n.kind === "doc") && n.community != null) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r + 2.4, 0, Math.PI * 2);
+        ctx.strokeStyle = "hsl(" + communityHue(n.community) + ",70%,58%)";
+        ctx.lineWidth = 2; ctx.stroke();
       }
 
       ctx.beginPath();
@@ -529,10 +618,13 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
         ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
       }
 
-      // concept + wiki labels always; turn labels when zoomed in
-      if (n.kind === "concept" || n.kind === "wiki" || view.scale > 1.4) {
+      // concept + wiki labels always; file/doc when zoomed a little; turn labels when zoomed in
+      var showLabel = n.kind === "concept" || n.kind === "wiki"
+        || ((n.kind === "file" || n.kind === "doc") && view.scale > 0.9)
+        || view.scale > 1.4;
+      if (showLabel) {
         ctx.globalAlpha = faded ? 0.25 : 0.9;
-        ctx.fillStyle = n.kind === "wiki" ? "#5bd66f" : "#e7e9ee";
+        ctx.fillStyle = n.kind === "wiki" ? "#5bd66f" : n.kind === "file" ? "#e2704a" : n.kind === "doc" ? "#4a90d9" : "#e7e9ee";
         ctx.font = (n.kind === "wiki" ? 12 : n.kind === "concept" ? 11 : 10) + "px ui-monospace, monospace";
         ctx.fillText(n.label, p.x + r + 4, p.y + 3);
       }
@@ -599,6 +691,8 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
           ? ("concept &middot; in " + (hov.freq || 0) + " turns")
           : hov.kind === "wiki"
           ? "wiki page"
+          : (hov.kind === "file" || hov.kind === "doc")
+          ? (esc(hov.path || "") + " &middot; " + hov._deg + " links" + (hov.community != null ? " &middot; community " + esc(String(hov.community)) : ""))
           : (esc(hov.session || "") + (when ? " &middot; " + when : ""));
         tooltip.innerHTML = "<div>" + esc(hov.label) + "</div><div class='t-meta'>" + meta + "</div>";
         tooltip.style.display = "block";
@@ -645,6 +739,9 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
     if (n.kind === "concept" || n.kind === "wiki") {
       highlightSet = neighbors(n.id); // light up its connected nodes
       closePanel();
+    } else if (n.kind === "file" || n.kind === "doc") {
+      highlightSet = neighbors(n.id); // light up dependencies/links
+      openPanel(n);
     } else {
       highlightSet = null;
       openPanel(n);
@@ -658,6 +755,18 @@ export function renderGraphHtml(graph: Graph, meta: GraphMeta): string {
 
   // ---- side panel ----
   function openPanel(n) {
+    if (n.kind === "file" || n.kind === "doc") {
+      document.getElementById("p-session").textContent = (n.kind === "file" ? "code" : "doc") + (n.ext ? " (." + n.ext + ")" : "");
+      document.getElementById("p-dot").style.background = roleColor(n);
+      document.getElementById("p-role").textContent = n.path || n.label || "";
+      document.getElementById("p-role").style.color = roleColor(n);
+      // textContent keeps any <script>/<img onerror> in the path or snippet inert.
+      document.getElementById("p-content").textContent = n.snippet || "";
+      document.getElementById("p-time").textContent =
+        (n.community != null ? "community " + n.community + "  |  " : "") + (n._deg || 0) + " links";
+      panel.classList.add("open");
+      return;
+    }
     document.getElementById("p-session").textContent = n.session || "";
     document.getElementById("p-dot").style.background = "hsl(" + sessionHue(n.session) + ",70%,58%)";
     document.getElementById("p-role").textContent = n.role || "";

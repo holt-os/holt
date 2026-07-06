@@ -232,6 +232,26 @@ The derived knowledge wiki (`holt wiki`). One flat folder of Obsidian-compatible
 
 Open the folder in Obsidian as a vault to browse the `[[links]]` natively, or `holt wiki open`. Wiki pages are also embedded into the recall index (as `fact`-role rows under a `wiki` session), so `holt memory search` and chat recall surface synthesized knowledge. `holt memory` counts these in its `facts` total; a `holt wiki rebuild` refreshes them cleanly.
 
+## Graph output: `<folder>/.holt/graph.html` and `GRAPH_REPORT.md`
+
+`holt graph` writes one self-contained HTML file to `<folder>/.holt/graph.html` (override with `--out <path>`) and opens it. By default it draws only this folder's memory, plus the wiki when one exists (`--wiki` / `--no-wiki` force it). Nothing about the default behavior changed with the richer-graph feature; code and docs are strictly opt-in.
+
+**Richer graph (code, docs, communities).** These flags ingest the folder's own files:
+
+| Flag / form          | Effect                                                                 |
+|----------------------|-----------------------------------------------------------------------|
+| `holt graph --code`  | Add a node per source file plus resolvable dependency (import) edges.  |
+| `holt graph --docs`  | Add a node per doc (`.md` / `.mdx` / `.txt` / `.rst`) plus link edges. |
+| `holt graph --all`   | Both of the above.                                                     |
+| `holt graph report`  | Ingest code + docs, detect communities, write `GRAPH_REPORT.md`.       |
+
+- **Ingest scope + skips.** The walk skips `node_modules`, `.git`, `.holt`, `dist`, `build`, `.next`, `coverage`, other build/vendor dirs, and any dotfolder. Safety caps: at most 2000 files, 400KB per file, 64MB total. Skips are logged (`ingest skipped: ...`). Code extensions include `js`, `ts`, `jsx`, `tsx`, `mjs`, `cjs`, `py`, `go`, `rb`, `rs`, `java`, and more.
+- **Dependency edges** are best-effort per language. JS/TS: `import ... from`, `export ... from`, `require()`, dynamic `import()`; only relative specifiers (`./`, `../`) resolve to local files (trying common extensions + `index.*`), bare/package imports are dropped. Python: `import x` and `from x import ...` mapped to local module files where resolvable. Docs: Markdown links and `[[wikilinks]]` between docs in the set. Unresolved references are dropped, never fatal.
+- **Communities.** Once code/docs are ingested, Holt runs **label propagation** (deterministic, zero dependency) over the whole graph, stamps each node with a community id, and tints node rings by community in the HTML.
+- **`GRAPH_REPORT.md`** (from `holt graph report`, `--out` to relocate) lists node / edge / community counts, the highest-degree **god nodes** with their community, and a per-community summary (size + representative files). Safe on empty input (it says there is nothing to ingest, no crash).
+
+The HTML stays self-contained, valid, and XSS-safe: file paths and code snippets are embedded as escaped JSON and rendered via `textContent`, so a file whose name or contents contain `</script>`, `<!--`, or `<img onerror=...>` cannot break out of the data block or inject.
+
 ## Launch alias in your shell rc
 
 If you set a launch word during `holt init` or `holt setting`, Holt writes a fenced block into your shell rc (`.zshrc`, `.bashrc`, or `.profile`, chosen from `$SHELL`):
