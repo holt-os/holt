@@ -1,17 +1,21 @@
 /**
- * Phase 3 skills: SKILL.md folders discovered from two roots. Workspace skills
- * live at <folder>/.holt/skills/<name>/SKILL.md; personal (global) skills at
- * ~/.holt/skills/<name>/SKILL.md. Workspace wins on a name collision.
+ * Phase 3 skills: SKILL.md folders discovered from three roots. Workspace
+ * skills live at <folder>/.holt/skills/<name>/SKILL.md; personal (global)
+ * skills at ~/.holt/skills/<name>/SKILL.md; and a read-only set of built-in
+ * skills ships inside the Holt package at <package-root>/skills/<name>/SKILL.md.
+ * Precedence is workspace > global > builtin, so a user can override a built-in
+ * by creating a same-named workspace or global skill.
  *
  * A skill is just prompt text. Nothing here executes skill content: an invoked
  * skill's Markdown body is spliced into the model prompt, never run as code.
  * Zero dependencies, so the YAML frontmatter parser is hand-rolled below.
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { GLOBAL_DIR, wsHoltDir } from './workspace';
 
-export type SkillScope = 'workspace' | 'global';
+export type SkillScope = 'workspace' | 'global' | 'builtin';
 
 export interface Skill {
   name: string;
@@ -20,9 +24,22 @@ export interface Skill {
   scope: SkillScope;
 }
 
+/**
+ * The built-in skills directory that ships inside the package, resolved from
+ * this module's own location so it works both installed and in dev. When
+ * bundled this file is dist/cli.js, so ../skills lands at the package root;
+ * running the source under tsx (src/skills.ts) resolves the same expression to
+ * <repo>/skills. Callers guard with existsSync, so a missing dir is harmless.
+ */
+export function builtinSkillsRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '..', 'skills');
+}
+
 /** Folder that holds skills for a given scope. */
 export function skillsRoot(scope: SkillScope): string {
-  return scope === 'workspace' ? join(wsHoltDir(), 'skills') : join(GLOBAL_DIR, 'skills');
+  if (scope === 'workspace') return join(wsHoltDir(), 'skills');
+  if (scope === 'builtin') return builtinSkillsRoot();
+  return join(GLOBAL_DIR, 'skills');
 }
 
 /** Lowercase, keep [a-z0-9-]. Used for every path segment derived from a name. */
@@ -132,12 +149,15 @@ function listScope(scope: SkillScope): Skill[] {
 }
 
 /**
- * All discoverable skills, sorted by name. On a name collision the workspace
- * copy shadows the global one.
+ * All discoverable skills, sorted by name. On a name collision precedence is
+ * workspace > global > builtin, so a same-named workspace or global skill
+ * shadows a built-in one.
  */
 export function listSkills(): Skill[] {
   const byName = new Map<string, Skill>();
-  // Global first so workspace overwrites on collision.
+  // Builtin first (lowest), then global, then workspace, so each later scope
+  // overwrites the earlier one on a name collision.
+  for (const s of listScope('builtin')) byName.set(s.name, s);
   for (const s of listScope('global')) byName.set(s.name, s);
   for (const s of listScope('workspace')) byName.set(s.name, s);
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -148,7 +168,7 @@ export interface LoadedSkill {
   body: string;
 }
 
-/** Load one skill by name (workspace wins), returning its body without frontmatter. */
+/** Load one skill by name (workspace > global > builtin), returning its body without frontmatter. */
 export function loadSkill(name: string): LoadedSkill | null {
   const want = sanitizeName(name);
   const skill = listSkills().find((s) => s.name === want);
