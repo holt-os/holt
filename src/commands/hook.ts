@@ -38,6 +38,7 @@ import { isInstalled, type Turn } from '../brains';
 import { isTrusted } from '../workspace';
 import { recall, memDir, newSessionId } from '../memory';
 import { extractAndSaveFacts } from '../facts';
+import { syncWiki, resolveBrainMaintainer, wikiDir } from '../wiki';
 import { c } from '../ui';
 
 // ---- shape of the two hooks we manage ---------------------------------------
@@ -454,6 +455,19 @@ async function capture(): Promise<void> {
     const session = 'hook-' + (data.session_id || newSessionId());
     const n = await extractAndSaveFacts(brain, cfg, history, session);
     if (n > 0) process.stderr.write(`holt hook capture: saved ${n} fact${n === 1 ? '' : 's'} to ${memDir()}\n`);
+
+    // Ambient wiki auto-sync: when the folder opted in (wiki.autoSync), fold the
+    // freshly captured facts into wiki pages too. Best-effort and STDOUT-CLEAN by
+    // contract: syncWiki never throws, and any note goes to stderr only. Still
+    // exit 0 regardless of outcome.
+    if (cfg.wiki?.autoSync) {
+      const res = await syncWiki(cfg, () => resolveBrainMaintainer(cfg));
+      if (res.status === 'ok' && res.changed) {
+        process.stderr.write(
+          `holt hook capture: updated the wiki (${res.created} created, ${res.updated} updated) in ${wikiDir()}\n`,
+        );
+      }
+    }
   } catch (e) {
     process.stderr.write('holt hook capture: ' + (e instanceof Error ? e.message : String(e)) + '\n');
   }

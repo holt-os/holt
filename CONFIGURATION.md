@@ -57,7 +57,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 - `wiki` (object): the derived knowledge wiki (see `holt wiki`).
   - `maintainer` (`"brain"` | `"local"`, default `"brain"`): who synthesizes and merges pages. `brain` uses the folder's configured brain (rides your Claude plan when the brain is the Claude CLI, so no marginal cost). `local` uses a local Ollama generative model, which is free and offline but lower quality (it trades dollars for RAM).
   - `localModel` (string, default `"qwen2.5:7b"`): the Ollama generative model used when `maintainer` is `"local"`. This is a text model, distinct from the embed model (`nomic-embed-text`) used for routing and recall. If it is not pulled, `holt wiki` prints the `ollama pull` line and falls back to the brain. `holt wiki setup` recommends a model for your RAM.
-  - `autoSync` (boolean, optional): reserved for a future sync-on-session-end hook; off by default.
+  - `autoSync` (boolean, optional, default off): when `true`, the wiki keeps itself current with no manual `holt wiki sync`. After a `holt chat` session ends, Holt distills facts and then folds them into pages automatically; the Claude Code Stop hook (`holt hook capture`) does the same ambiently, so facts captured with no chat still reach the wiki. Auto-sync is silent, best-effort, and never blocks exit, and it reuses the same engine as `holt wiki sync` (no behavior drift). Toggle it with `holt wiki auto on` / `holt wiki auto off` (which write this field); `holt wiki status` and `holt wiki auto` show the current state.
 
 To point a brain at a different CLI or add flags, edit `command` / `args`. See the echo-brain trick in `CONTRIBUTING.md` for a testing use of this.
 

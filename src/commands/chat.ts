@@ -4,6 +4,7 @@ import { isInstalled, renderPrompt, runBrain, MAX_REPLAY_TURNS, type Turn } from
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { extractAndSaveFacts } from '../facts';
+import { syncWiki, resolveBrainMaintainer } from '../wiki';
 import { saveReply } from '../output';
 import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills';
 import { runSettings } from './setting';
@@ -259,6 +260,18 @@ export async function chat(): Promise<void> {
       if (n > 0) console.log(c.dim(`  distilled ${n} fact${n === 1 ? '' : 's'} from this session.`));
     } catch {
       // never block exit on a memory step
+    }
+  }
+
+  // Auto-sync the derived wiki AFTER fact extraction, so the new facts fold into
+  // pages with no manual "holt wiki sync". Opt-in (wiki.autoSync), silent, and
+  // never blocks exit: any failure is swallowed by syncWiki (it never throws).
+  if (cfg.wiki?.autoSync) {
+    try {
+      const res = await syncWiki(cfg, () => resolveBrainMaintainer(cfg));
+      if (res.status === 'ok' && res.changed) console.log(c.dim('  updated the wiki.'));
+    } catch {
+      // never block exit on a wiki step
     }
   }
 

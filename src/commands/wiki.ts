@@ -1,10 +1,11 @@
 /**
  * `holt wiki`: the derived, LLM-maintained knowledge wiki (Layer 3 memory).
  *
- *   holt wiki                 status (maintainer, model, page count, last sync)
+ *   holt wiki                 status (maintainer, model, auto-sync, page count, last sync)
  *   holt wiki sync            fold new facts into pages (route + merge)
+ *   holt wiki auto [on|off]   toggle auto-sync at session end (wiki.autoSync)
  *   holt wiki rebuild         wipe and regenerate every page from facts+turns
- *   holt wiki lint [--fix]    scan for contradictions/duplicates/gaps
+ *   holt wiki lint [--fix]    scan for contradictions/duplicates/gaps; --fix applies them
  *   holt wiki list            list pages
  *   holt wiki show <page>     print a page
  *   holt wiki open            open the wiki (index.md) in the default app
@@ -16,8 +17,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { loadConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type HoltConfig } from '../config';
-import { isInstalled } from '../brains';
+import { loadConfig, saveConfig, type HoltConfig } from '../config';
 import { ensureTrusted } from '../workspace';
 import { c, createReader } from '../ui';
 import { localModelStatus, pullHint } from '../localmodel';
@@ -29,181 +29,56 @@ import {
   listPageSlugs,
   readPage,
   writePage,
-  writeIndex,
   wikiStats,
   factRows,
-  pageEmbeddings,
-  routeFact,
   proposeSlug,
-  buildPagePrompt,
   resolveMaintainer,
   runMaintainer,
-  indexPagesForRecall,
   clearWikiRecallRows,
   wipeWiki,
   recommendLocalModel,
   saveSyncMarker,
-  type Maintainer,
+  syncWiki,
+  foldFacts,
+  resolveBrainMaintainer,
   type WikiPage,
-  type FactSource,
 } from '../wiki';
-
-/** Resolve the folder's default brain into a Maintainer (or null). Mirrors runner.ts. */
-function resolveBrainMaintainer(cfg: HoltConfig): Maintainer | null {
-  const id = cfg.defaultBrain;
-  if (!id) return null;
-  if ((BRAIN_IDS as string[]).includes(id)) {
-    const b = cfg.brains[id as BrainId];
-    if (!isInstalled(b.command)) return null;
-    return { kind: 'cli', id: id as BrainId, label: b.label };
-  }
-  const api = findApiBrain(cfg, id);
-  if (api && resolveApiKey(api)) return { kind: 'api', brain: api, label: `${id} (api: ${api.provider}/${api.model})` };
-  return null;
-}
 
 /** Slugify a maintainer-proposed title back to a page slug (best effort). */
 function titleToSlug(title: string): string {
   return proposeSlug(title);
 }
 
-interface SyncSummary {
-  created: number;
-  updated: number;
-  factsIntegrated: number;
-}
-
-/**
- * Fold facts (given, already selected) into pages using the maintainer. Groups
- * facts by routed target page, one maintainer call per changed page. Returns a
- * summary. Never throws.
- */
-async function foldFacts(
-  cfg: HoltConfig,
-  maintainer: Maintainer,
-  facts: FactSource[],
-): Promise<SyncSummary> {
-  const summary: SyncSummary = { created: 0, updated: 0, factsIntegrated: 0 };
-  if (facts.length === 0) return summary;
-
-  let pages = loadPages();
-  const targets = await pageEmbeddings(pages);
-
-  // Route each fact to a target slug, grouping facts by page.
-  const groups = new Map<string, { slug: string; isNew: boolean; facts: FactSource[] }>();
-  for (const f of facts) {
-    const decision = await routeFact(f.content, targets);
-    let slug = decision.slug;
-    let isNew = decision.kind === 'new';
-    // If two new facts propose the same or an already-grouped slug, merge them.
-    const existingGroup = groups.get(slug);
-    if (existingGroup) {
-      existingGroup.facts.push(f);
-    } else {
-      // A "new" slug that already exists on disk is really an update.
-      if (isNew && listPageSlugs().includes(slug)) isNew = false;
-      groups.set(slug, { slug, isNew, facts: [f] });
-    }
-  }
-
-  // Track known titles so pages written later in this same sync can link back to
-  // pages created earlier in it (otherwise the first-created pages get no links).
-  const knownTitles = new Set(pages.map((p) => p.title));
-  for (const group of groups.values()) {
-    knownTitles.add(readPage(group.slug)?.title ?? deriveTitle(group.facts[0]!.content, group.slug));
-  }
-  const changed: WikiPage[] = [];
-
-  for (const group of groups.values()) {
-    const existing = readPage(group.slug);
-    const title = existing?.title ?? deriveTitle(group.facts[0]!.content, group.slug);
-    const prompt = buildPagePrompt(
-      title,
-      existing?.body ?? '',
-      group.facts.map((f) => f.content),
-      [...knownTitles].filter((t) => t !== title),
-    );
-    const res = await runMaintainer(maintainer, cfg, prompt);
-    if (!res.ok || !res.text.trim()) {
-      // Skip this page; do not lose progress on others.
-      continue;
-    }
-    const body = stripFrontmatterEcho(res.text);
-    const prevSources = existing?.sources ?? [];
-    const page: WikiPage = {
-      slug: group.slug,
-      title,
-      updated: new Date().toISOString().slice(0, 10),
-      sources: dedupe([...prevSources, ...group.facts.map((f) => f.id)]),
-      body,
-    };
-    writePage(page);
-    changed.push(page);
-    if (existing) summary.updated++;
-    else summary.created++;
-    summary.factsIntegrated += group.facts.length;
-  }
-
-  // Refresh index + recall for the pages that changed.
-  pages = loadPages();
-  writeIndex(pages);
-  await indexPagesForRecall(changed);
-  return summary;
-}
-
-function dedupe(a: string[]): string[] {
-  return [...new Set(a)];
-}
-
-function deriveTitle(content: string, slug: string): string {
-  // Human-friendly title from the slug (Title Case), fallback to first words.
-  const fromSlug = slug.split('-').filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(' ');
-  return fromSlug || content.slice(0, 40);
-}
-
-/** Some models echo a frontmatter block despite instructions; strip a leading one. */
-function stripFrontmatterEcho(text: string): string {
-  let s = text.trim();
-  s = s.replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
-  if (s.startsWith('---')) {
-    const end = s.indexOf('\n---', 3);
-    if (end >= 0) s = s.slice(end + 4).trim();
-  }
-  return s;
-}
-
 // ---- subcommand: sync ----
+//
+// The heavy lifting (select fresh facts, resolve a maintainer, fold, advance the
+// marker) lives in wiki.ts's syncWiki() so the auto-sync triggers share it. This
+// command just renders the result; its output is byte-for-byte what it was.
 
 async function syncCmd(cfg: HoltConfig): Promise<void> {
-  const state = loadState();
-  const all = factRows();
-  const fresh = all.filter((f) => f.ts > state.lastSyncTs);
-  if (fresh.length === 0) {
+  const res = await syncWiki(cfg, () => resolveBrainMaintainer(cfg));
+
+  if (res.status === 'nothing') {
     console.log(c.dim('\n  No new facts since the last sync. Nothing to do.\n'));
     return;
   }
-
-  const { maintainer, report } = await resolveMaintainer(cfg, () => resolveBrainMaintainer(cfg));
-  if (!maintainer) {
+  if (res.status === 'no-maintainer') {
+    if (res.report?.note) console.log(c.dim('\n  ' + res.report.note));
     console.log(c.red('\n  No maintainer available.'));
     console.log(c.dim('  Configure a brain (holt init) or set wiki.maintainer to local with a pulled model.\n'));
     return;
   }
-  if (report?.note) console.log(c.dim('\n  ' + report.note));
 
-  console.log('\n' + c.dim(`  Integrating ${fresh.length} new fact${fresh.length === 1 ? '' : 's'} via ${maintainer.label}...`));
-  const summary = await foldFacts(cfg, maintainer, fresh);
+  const maintainer = res.maintainer!;
+  if (res.report?.note) console.log(c.dim('\n  ' + res.report.note));
 
-  // Advance the marker to the newest fact we saw (even if some pages were skipped;
-  // rebuild is always available to recover, and re-syncing bad facts is fine).
-  const newest = Math.max(state.lastSyncTs, ...fresh.map((f) => f.ts));
-  saveSyncMarker(newest);
+  console.log('\n' + c.dim(`  Integrated ${res.freshFacts} new fact${res.freshFacts === 1 ? '' : 's'} via ${maintainer.label}...`));
 
   console.log('\n' + c.accent('Wiki synced') + c.dim('  (this folder)'));
-  console.log(`  facts integrated  ${summary.factsIntegrated}`);
-  console.log(`  pages created     ${summary.created}`);
-  console.log(`  pages updated     ${summary.updated}`);
-  console.log(`  maintainer        ${maintainer.label}${report?.fellBack ? c.dim(' (fell back)') : ''}`);
+  console.log(`  facts integrated  ${res.factsIntegrated}`);
+  console.log(`  pages created     ${res.created}`);
+  console.log(`  pages updated     ${res.updated}`);
+  console.log(`  maintainer        ${maintainer.label}${res.report?.fellBack ? c.dim(' (fell back)') : ''}`);
   console.log(c.dim(`\n  Wiki: ${wikiDir()}  (open in Obsidian to browse [[links]])\n`));
 }
 
@@ -231,7 +106,7 @@ async function rebuildCmd(cfg: HoltConfig, ask: (q: string) => Promise<string | 
   wipeWiki();
   clearWikiRecallRows();
   console.log(c.dim(`\n  Rebuilding from ${facts.length} facts via ${maintainer.label}...`));
-  const summary = await foldFacts(cfg, maintainer, facts);
+  const { summary } = await foldFacts(cfg, maintainer, facts);
   saveSyncMarker(Math.max(0, ...facts.map((f) => f.ts)));
 
   console.log('\n' + c.accent('Wiki rebuilt'));
@@ -259,6 +134,61 @@ function buildLintPrompt(pages: WikiPage[]): string {
   return lines.join('\n');
 }
 
+/**
+ * The fix prompt asks the maintainer to RETURN corrected page bodies. Each page
+ * is emitted between explicit markers so we can parse per-page bodies back out
+ * and rewrite only the pages that actually changed. A page with no needed change
+ * should be echoed unchanged (we diff and skip no-ops).
+ */
+const FIX_BEGIN = '<<<HOLT-PAGE ';
+const FIX_END = '<<<HOLT-END>>>';
+
+function buildFixPrompt(pages: WikiPage[]): string {
+  const lines: string[] = [
+    'You maintain a personal knowledge wiki. Fix quality issues across the pages',
+    'below: resolve CONTRADICTIONS (keep the most recent/consistent statement),',
+    'merge DUPLICATE passages, and add obvious missing [[wikilinks]]. Do not invent',
+    'new facts; only reconcile and de-duplicate what is already written.',
+    '',
+    'Return EVERY page, even unchanged ones, using EXACTLY this format and nothing',
+    'else (no prose, no code fences, no frontmatter):',
+    '',
+    `${FIX_BEGIN}<slug>>>>`,
+    '<corrected page body in Markdown, ending with a "## Related" section of [[links]]>',
+    FIX_END,
+    '',
+    'Pages:',
+  ];
+  for (const pg of pages) {
+    lines.push('', `${FIX_BEGIN}${pg.slug}>>>`, `### ${pg.title}`, pg.body.trim(), FIX_END);
+  }
+  return lines.join('\n');
+}
+
+/** Parse the fix reply into a map of slug -> corrected body. Never throws. */
+function parseFixReply(raw: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const text = raw || '';
+  let i = 0;
+  while (true) {
+    const begin = text.indexOf(FIX_BEGIN, i);
+    if (begin < 0) break;
+    const slugStart = begin + FIX_BEGIN.length;
+    const slugEnd = text.indexOf('>>>', slugStart);
+    if (slugEnd < 0) break;
+    const slug = text.slice(slugStart, slugEnd).trim();
+    const bodyStart = slugEnd + 3;
+    const end = text.indexOf(FIX_END, bodyStart);
+    if (end < 0) break;
+    let body = text.slice(bodyStart, end).trim();
+    // Strip a leading "### Title" echo line; the title comes from frontmatter.
+    body = body.replace(/^###[^\n]*\n+/, '').trim();
+    if (slug && body) out.set(slug, body);
+    i = end + FIX_END.length;
+  }
+  return out;
+}
+
 async function lintCmd(cfg: HoltConfig, fix: boolean): Promise<void> {
   const pages = loadPages();
   if (pages.length === 0) {
@@ -272,18 +202,61 @@ async function lintCmd(cfg: HoltConfig, fix: boolean): Promise<void> {
   }
   if (report?.note) console.log(c.dim('\n  ' + report.note));
 
-  if (fix) {
-    console.log(c.dim('\n  Note: --fix can rewrite pages. Put .holt/wiki under git or back it up first.'));
-    console.log(c.dim('  For now, lint proposes only; applying edits is left to a future release. Showing the report.\n'));
-  }
-
-  console.log(c.dim(`\n  Auditing ${pages.length} page${pages.length === 1 ? '' : 's'} via ${maintainer.label}...\n`));
-  const res = await runMaintainer(maintainer, cfg, buildLintPrompt(pages));
-  if (!res.ok || !res.text.trim()) {
-    console.log(c.dim('  Lint could not produce a report (maintainer returned nothing).\n'));
+  // Default path (no --fix): audit and print a report only. Files untouched.
+  if (!fix) {
+    console.log(c.dim(`\n  Auditing ${pages.length} page${pages.length === 1 ? '' : 's'} via ${maintainer.label}...\n`));
+    const res = await runMaintainer(maintainer, cfg, buildLintPrompt(pages));
+    if (!res.ok || !res.text.trim()) {
+      console.log(c.dim('  Lint could not produce a report (maintainer returned nothing).\n'));
+      return;
+    }
+    console.log(res.text.trim() + '\n');
     return;
   }
-  console.log(res.text.trim() + '\n');
+
+  // --fix path: ask for corrected bodies and APPLY them. Pages are derived and
+  // regenerable ("holt wiki rebuild"), so applying is safe, but still nudge the
+  // user toward git/backup before we rewrite files.
+  console.log(c.dim('\n  --fix will rewrite affected pages. Put .holt/wiki under git or back it up first;'));
+  console.log(c.dim('  a bad fix is fully recoverable with "holt wiki rebuild".'));
+  console.log(c.dim(`\n  Auditing + fixing ${pages.length} page${pages.length === 1 ? '' : 's'} via ${maintainer.label}...\n`));
+
+  const res = await runMaintainer(maintainer, cfg, buildFixPrompt(pages));
+  if (!res.ok || !res.text.trim()) {
+    console.log(c.dim('  Lint --fix could not produce corrections (maintainer returned nothing). Files untouched.\n'));
+    return;
+  }
+
+  const corrected = parseFixReply(res.text);
+  if (corrected.size === 0) {
+    console.log(c.dim('  No parseable corrections returned. Files untouched.\n'));
+    return;
+  }
+
+  const byPage = new Map(pages.map((p) => [p.slug, p]));
+  const applied: string[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [slug, body] of corrected) {
+    const page = byPage.get(slug);
+    if (!page) continue; // maintainer named a page we do not have; ignore safely
+    if (body.trim() === page.body.trim()) continue; // no-op; skip
+    try {
+      // Preserve provenance (sources) and title; only the body + updated date change.
+      writePage({ ...page, body: body.trim(), updated: today });
+      applied.push(page.title);
+    } catch {
+      // partial application is fine; keep going
+    }
+  }
+
+  if (applied.length === 0) {
+    console.log(c.dim('  Lint found nothing to change. Pages already clean.\n'));
+    return;
+  }
+  console.log('\n' + c.accent('Wiki lint applied') + c.dim('  (this folder)'));
+  console.log(`  pages rewritten   ${applied.length}`);
+  for (const t of applied) console.log(c.dim(`    - ${t}`));
+  console.log(c.dim(`\n  Recover any page with "holt wiki rebuild". Wiki: ${wikiDir()}\n`));
 }
 
 // ---- subcommand: list / show / status / open / setup ----
@@ -330,6 +303,7 @@ async function statusCmd(cfg: HoltConfig): Promise<void> {
   console.log('\n' + c.accent('Holt wiki') + c.dim('  (this folder)'));
   console.log(`  maintainer    ${cfg.wiki.maintainer}`);
   console.log(`  localModel    ${cfg.wiki.localModel}`);
+  console.log(`  auto-sync     ${cfg.wiki.autoSync ? c.green('on') : c.dim('off')}${cfg.wiki.autoSync ? '' : c.dim('  (holt wiki auto on)')}`);
   console.log(`  pages         ${stats.pages}`);
   console.log(`  size          ${(stats.bytes / 1024).toFixed(1)} KB  (./.holt/wiki/)`);
   console.log(`  last sync     ${lastSync}`);
@@ -350,10 +324,40 @@ async function statusCmd(cfg: HoltConfig): Promise<void> {
   console.log(c.dim(`  Pull it with: ${rec.pull}`));
 
   console.log(c.dim('\n  holt wiki sync              fold new facts into pages'));
+  console.log(c.dim('  holt wiki auto [on|off]     auto-sync the wiki when a session ends'));
   console.log(c.dim('  holt wiki rebuild           regenerate the whole wiki from facts'));
-  console.log(c.dim('  holt wiki lint              audit for contradictions, duplicates, gaps'));
+  console.log(c.dim('  holt wiki lint [--fix]      audit (and with --fix, apply) contradiction/duplicate fixes'));
   console.log(c.dim('  holt wiki list / show <p>   browse pages'));
   console.log(c.dim('  holt wiki open              open in your default app (Obsidian reads it natively)\n'));
+}
+
+/**
+ * `holt wiki auto [on|off]`: toggle wiki.autoSync in the folder config. With no
+ * argument it reports the current state. When on, the wiki syncs automatically
+ * at the end of a `holt chat` session and when the Claude Code Stop hook fires.
+ */
+function autoCmd(cfg: HoltConfig, arg: string): void {
+  const want = (arg || '').toLowerCase();
+  if (want === '') {
+    const on = cfg.wiki.autoSync === true;
+    console.log('\n' + c.accent('Wiki auto-sync') + c.dim('  (this folder)'));
+    console.log(`  ${on ? c.green('on') : c.dim('off')}`);
+    console.log(c.dim('  usage: holt wiki auto on | off'));
+    console.log(c.dim('  When on, the wiki folds new facts in automatically after a chat session'));
+    console.log(c.dim('  or when the Claude Code Stop hook captures facts. No manual "holt wiki sync".\n'));
+    return;
+  }
+  if (want !== 'on' && want !== 'off') {
+    console.log(c.dim('\n  usage: holt wiki auto on | off\n'));
+    return;
+  }
+  cfg.wiki.autoSync = want === 'on';
+  saveConfig(cfg);
+  console.log(
+    want === 'on'
+      ? c.green('\n  wiki auto-sync: on') + c.dim('  (syncs at session end)\n')
+      : c.dim('\n  wiki auto-sync: off\n'),
+  );
 }
 
 function setupCmd(cfg: HoltConfig): void {
@@ -414,6 +418,9 @@ export async function wikiCmd(sub?: string, rest: string[] = []): Promise<void> 
       case 'sync':
         await syncCmd(cfg);
         break;
+      case 'auto':
+        autoCmd(cfg, rest[0] ?? '');
+        break;
       case 'rebuild':
         await rebuildCmd(cfg, ask);
         break;
@@ -438,7 +445,7 @@ export async function wikiCmd(sub?: string, rest: string[] = []): Promise<void> 
         await statusCmd(cfg);
         break;
       default:
-        console.error(`\n  Unknown wiki subcommand: "${sub}". Use: sync | rebuild | lint | list | show <page> | open | status | setup\n`);
+        console.error(`\n  Unknown wiki subcommand: "${sub}". Use: sync | auto | rebuild | lint | list | show <page> | open | status | setup\n`);
         process.exitCode = 1;
     }
   } finally {
