@@ -326,6 +326,8 @@ Install **merges** into any existing `hooks` config, never clobbers unrelated se
 
 **Trusted-folder guard (important).** The two runtime hooks (`holt hook inject` and `holt hook capture`, invoked by Claude Code, not you) no-op **silently** unless the folder is a trusted Holt workspace with an existing `.holt/memory`. So Holt never injects your private notes into an unrelated project, and never creates memory in a folder you never set up. To make a folder ambient, run `holt init` (or `holt chat`) there once so it becomes trusted and gets its `.holt/memory`. The inject hook keeps stdout clean (only the context block is printed, since Claude Code injects it verbatim); all diagnostics go to stderr, and both hooks always exit 0 so a memory step never blocks or slows your prompt.
 
+**Seeing what the hooks did (`~/.holt/hooks.log`).** Since the hooks stay silent, every `holt hook capture` run appends **one** line to `~/.holt/hooks.log` with the outcome or the exact skip reason (untrusted folder, no config, `extractFacts` off, no usable brain, missing or empty transcript, too few exchanges, or `saved N facts`), preceded by a line of the raw hook fields it received. Check this file first if capture seems to save nothing. `inject` uses the same log but stays quiet by default; set `HOLT_HOOK_DEBUG=1` to make it log too.
+
 To uninstall, run `holt hook remove` (add `--project` if you installed with `--project`).
 
 ## Output format

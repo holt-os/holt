@@ -30,14 +30,15 @@
  *     where content is a string or an array of blocks ({ text } for text,
  *     tool_use/tool_result otherwise).
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, realpathSync, appendFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { loadConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig } from '../config';
 import { isInstalled, type Turn } from '../brains';
-import { isTrusted } from '../workspace';
+import { isTrusted, GLOBAL_DIR } from '../workspace';
 import { recall, memDir, newSessionId } from '../memory';
-import { extractAndSaveFacts } from '../facts';
+import { extractAndSaveFacts, MIN_EXCHANGES_FOR_EXTRACTION } from '../facts';
 import { syncWiki, resolveBrainMaintainer, wikiDir } from '../wiki';
 import { c } from '../ui';
 
@@ -342,39 +343,136 @@ function guardTrusted(real: string): boolean {
   return true;
 }
 
+// ---- runtime: observability -------------------------------------------------
+
+/**
+ * Append one line to ~/.holt/hooks.log. This is the safety net for the ambient
+ * hooks: because both bodies are silent-by-contract (they exit 0 and print
+ * nothing on a no-op), a maintainer has no way to see WHY capture did nothing on
+ * a real Claude Code run. Every capture() invocation logs exactly one outcome
+ * line (plus one raw-fields line at the top); inject() logs only when
+ * HOLT_HOOK_DEBUG is set, since it fires on every prompt. Creates ~/.holt if
+ * needed and NEVER throws: logging must not perturb the hook it observes.
+ */
+function hookLog(msg: string): void {
+  try {
+    mkdirSync(GLOBAL_DIR, { recursive: true });
+    appendFileSync(join(GLOBAL_DIR, 'hooks.log'), `${new Date().toISOString()} ${msg}\n`, 'utf8');
+  } catch {
+    // logging is best-effort; swallow everything
+  }
+}
+
+/** File size in bytes, or 0 if the path is missing/unreadable. Never throws. */
+function fileBytes(path: string | undefined): number {
+  if (!path) return 0;
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
 // ---- runtime: inject (UserPromptSubmit) -------------------------------------
 
 async function inject(): Promise<void> {
   // Everything below is best-effort. On ANY problem we print nothing and exit 0
-  // so the user's prompt is never blocked or polluted.
+  // so the user's prompt is never blocked or polluted. inject logs to
+  // ~/.holt/hooks.log ONLY when HOLT_HOOK_DEBUG is set (it fires per prompt).
+  const debug = !!process.env.HOLT_HOOK_DEBUG;
+  const dlog = (m: string): void => {
+    if (debug) hookLog(m);
+  };
   try {
     const raw = await readStdin(2000);
     const data = parseHookInput(raw);
+    dlog(
+      `inject cwd=${data.cwd ?? '(none)'} event=${data.hook_event_name ?? 'UserPromptSubmit'} hasCwd=${!!data.cwd} promptLen=${(data.prompt || '').trim().length}`,
+    );
     const prompt = (data.prompt || '').trim();
-    if (prompt.length < 3) return;
+    if (prompt.length < 3) {
+      dlog('inject -> prompt too short');
+      return;
+    }
 
     const real = enterFolder(data.cwd);
-    if (!real) return;
-    if (!guardTrusted(real)) return;
+    if (!real) {
+      dlog('inject -> no cwd');
+      return;
+    }
+    if (!guardTrusted(real)) {
+      dlog(`inject -> untrusted or no .holt/memory (real=${real})`);
+      return;
+    }
 
     const session = data.session_id || newSessionId();
     const hits = await recall(prompt, session, 4);
-    if (!hits.length) return;
+    if (!hits.length) {
+      dlog('inject -> recalled 0 notes');
+      return;
+    }
 
     const lines = hits.map((h) => `- ${h.turn.content.replace(/\s+/g, ' ').trim().slice(0, 500)}`);
-    // ONLY the context block goes to stdout; this is injected verbatim.
+    // ONLY the context block goes to stdout; this is injected verbatim. The
+    // wording frames these as already-known background so the model uses them
+    // silently instead of narrating "let me check your memory / recalled N".
     process.stdout.write(
-      ['[Holt memory - relevant notes from earlier sessions in this folder]', ...lines, ''].join('\n'),
+      [
+        'Background on this user, recalled from earlier sessions (use it directly, do not mention looking it up):',
+        ...lines,
+        '',
+      ].join('\n'),
     );
+    dlog(`inject -> injected ${hits.length} note(s)`);
   } catch (e) {
     // Diagnostics to stderr only, never stdout.
     process.stderr.write('holt hook inject: ' + (e instanceof Error ? e.message : String(e)) + '\n');
+    dlog('inject -> error: ' + (e instanceof Error ? e.message : String(e)));
   }
 }
 
 // ---- runtime: capture (Stop) ------------------------------------------------
 
-/** Read a Claude Code JSONL transcript into a plain Turn[] (text only). */
+/** Line count of a transcript file (for the "parsed 0 turns" diagnostic). */
+function countLines(raw: string): number {
+  let n = 0;
+  for (const line of raw.split('\n')) if (line.trim()) n++;
+  return n;
+}
+
+/**
+ * Pull display text out of a `content` value that is either a string or an array
+ * of blocks. From a block array we take {type:'text'}.text, plus any block that
+ * carries a string `text`, and we SKIP tool_use / tool_result / thinking blocks.
+ * Returns '' when nothing textual is present. Never throws.
+ */
+function textFromContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const b of content) {
+    if (typeof b === 'string') {
+      parts.push(b);
+      continue;
+    }
+    if (!b || typeof b !== 'object') continue;
+    const blk = b as { type?: unknown; text?: unknown };
+    // Skip non-text block kinds explicitly.
+    if (blk.type === 'tool_use' || blk.type === 'tool_result' || blk.type === 'thinking') continue;
+    if (typeof blk.text === 'string') parts.push(blk.text);
+  }
+  return parts.join(' ').trim();
+}
+
+/**
+ * Read a Claude Code JSONL transcript into a plain Turn[] (text only). Tolerant
+ * of Claude Code v2.x shapes: a record counts as a turn if EITHER its top-level
+ * `type` is 'user'/'assistant' OR its nested `message.role` is 'user'/'assistant'.
+ * The role is taken from message.role when present, else from top-level type.
+ * Text comes from message.content, falling back to a top-level `content`.
+ * Non-message records (mode, permission-mode, summary, system,
+ * file-history-snapshot, etc.) and empty-text turns are skipped. Never throws.
+ */
 function readTranscript(path: string): Turn[] {
   const out: Turn[] = [];
   let raw: string;
@@ -391,69 +489,188 @@ function readTranscript(path: string): Turn[] {
     } catch {
       continue;
     }
-    const d = rec as { type?: string; message?: { role?: string; content?: unknown } };
-    if (d.type !== 'user' && d.type !== 'assistant') continue;
-    const m = d.message;
-    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
-    let text = '';
-    if (typeof m.content === 'string') {
-      text = m.content;
-    } else if (Array.isArray(m.content)) {
-      text = m.content
-        .map((b) => {
-          if (typeof b === 'string') return b;
-          if (b && typeof (b as { text?: unknown }).text === 'string') return (b as { text: string }).text;
-          return ''; // skip tool_use / tool_result blocks
-        })
-        .join(' ')
-        .trim();
-    }
+    if (!rec || typeof rec !== 'object') continue;
+    const d = rec as { type?: unknown; content?: unknown; message?: { role?: unknown; content?: unknown } };
+    const topType = d.type === 'user' || d.type === 'assistant' ? d.type : undefined;
+    const m = d.message && typeof d.message === 'object' ? d.message : undefined;
+    const msgRole = m && (m.role === 'user' || m.role === 'assistant') ? (m.role as 'user' | 'assistant') : undefined;
+
+    // A turn if EITHER signal says user/assistant. This is the loosening: the
+    // old code required BOTH, which drops records that carry only one of them.
+    const role = msgRole ?? topType;
+    if (role !== 'user' && role !== 'assistant') continue;
+
+    // Prefer message.content; fall back to a top-level content.
+    let text = m ? textFromContent(m.content) : '';
+    if (!text) text = textFromContent(d.content);
+
     text = text.trim();
     if (text.length < 3) continue;
-    out.push({ role: m.role, content: text });
+    out.push({ role, content: text });
   }
   return out;
 }
 
-/** Resolve the folder's configured brain into the shape extractAndSaveFacts wants. */
-function resolveExtractionBrain(
-  cfg: HoltConfig,
-): { kind: 'cli'; id: BrainId } | { kind: 'api'; brain: ApiBrain } | null {
-  const id = cfg.defaultBrain;
-  if (!id) return null;
-  if ((BRAIN_IDS as string[]).includes(id)) {
-    const bid = id as BrainId;
-    if (!cfg.brains[bid].enabled) return null;
-    if (!isInstalled(cfg.brains[bid].command)) return null;
-    return { kind: 'cli', id: bid };
+/**
+ * Resolve an ABSOLUTE path to a CLI command when a bare `which` fails. The Stop
+ * hook subprocess can run under a reduced PATH (Claude Code spawns hooks with a
+ * minimal environment), so `isInstalled('claude')` may return false even though
+ * the brain works fine in the user's shell. We try, in order:
+ *   (a) the user's login shell: `$SHELL -lc "command -v <cmd>"` (loads profile);
+ *   (b) a list of common install dirs.
+ * Returns the resolved absolute path, or null if nothing was found. Never throws.
+ */
+function resolveCommandPath(command: string): string | null {
+  // Already an absolute path that exists? Use it as-is.
+  if (command.startsWith('/') && existsSync(command)) return command;
+
+  // (a) Ask the login shell, which sources the user's profile / PATH.
+  try {
+    const shell = process.env.SHELL || '/bin/sh';
+    const res = spawnSync(shell, ['-lc', 'command -v ' + command], { encoding: 'utf8' });
+    if (res.status === 0) {
+      const p = (res.stdout || '').trim().split('\n')[0]?.trim();
+      if (p && p.startsWith('/') && existsSync(p)) return p;
+    }
+  } catch {
+    // fall through to the directory probe
   }
-  const api = findApiBrain(cfg, id);
-  if (api && resolveApiKey(api)) return { kind: 'api', brain: api };
+
+  // (b) Probe common install locations directly.
+  const home = homedir();
+  const dirs = [
+    join(home, '.local', 'bin'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    join(home, '.npm-global', 'bin'),
+    '/usr/bin',
+    '/bin',
+  ];
+  for (const dir of dirs) {
+    const candidate = join(dir, command);
+    if (existsSync(candidate)) return candidate;
+  }
   return null;
 }
 
+/** What resolveExtractionBrain hands back, with diagnostics for the log line. */
+type BrainResolution =
+  | { kind: 'cli'; id: BrainId; commandOverride?: string }
+  | { kind: 'api'; brain: ApiBrain };
+
+interface BrainResolveResult {
+  brain: BrainResolution | null;
+  /** For the hooks.log "no usable brain" line. */
+  diag: { defaultBrain: string; command: string; whichFound: boolean; resolvedPath: string | null };
+}
+
+/**
+ * Resolve the folder's configured brain into the shape extractAndSaveFacts wants,
+ * carrying diagnostics for the hook log. For a CLI brain, if a bare `which` fails
+ * we try to resolve an absolute path (login shell + common dirs) and pass it as a
+ * commandOverride rather than skipping.
+ */
+function resolveExtractionBrain(cfg: HoltConfig): BrainResolveResult {
+  const id = cfg.defaultBrain;
+  const diag = { defaultBrain: id ?? '(none)', command: '(none)', whichFound: false, resolvedPath: null as string | null };
+  if (!id) return { brain: null, diag };
+
+  if ((BRAIN_IDS as string[]).includes(id)) {
+    const bid = id as BrainId;
+    const command = cfg.brains[bid].command;
+    diag.command = command;
+    if (!cfg.brains[bid].enabled) return { brain: null, diag };
+
+    const whichFound = isInstalled(command);
+    diag.whichFound = whichFound;
+    if (whichFound) {
+      // On PATH already; no override needed.
+      return { brain: { kind: 'cli', id: bid }, diag };
+    }
+    // Bare `which` failed under the hook's reduced PATH. Try an absolute path.
+    const resolved = resolveCommandPath(command);
+    diag.resolvedPath = resolved;
+    if (resolved) {
+      return { brain: { kind: 'cli', id: bid, commandOverride: resolved }, diag };
+    }
+    return { brain: null, diag };
+  }
+
+  const api = findApiBrain(cfg, id);
+  if (api && resolveApiKey(api)) return { brain: { kind: 'api', brain: api }, diag };
+  return { brain: null, diag };
+}
+
 async function capture(): Promise<void> {
+  // capture is silent-by-contract, so it ALWAYS writes exactly one outcome line
+  // to ~/.holt/hooks.log (plus a raw-fields line up top). That log is the only
+  // way to diagnose why a real Claude Code Stop hook saved nothing.
+  const cwdForLog = process.cwd();
   try {
     const raw = await readStdin(3000);
     const data = parseHookInput(raw);
+    hookLog(
+      `capture-fields event=${data.hook_event_name ?? 'Stop'} hasCwd=${!!data.cwd} hasTranscriptPath=${!!data.transcript_path} transcriptBytes=${fileBytes(data.transcript_path)} stdinBytes=${raw.length}`,
+    );
 
     const real = enterFolder(data.cwd);
-    if (!real) return;
-    if (!guardTrusted(real)) return;
+    if (!real) {
+      hookLog(`capture cwd=${data.cwd ?? cwdForLog} event=Stop -> no cwd`);
+      return;
+    }
+    if (!guardTrusted(real)) {
+      hookLog(`capture cwd=${real} event=Stop -> untrusted or no .holt/memory (real=${real})`);
+      return;
+    }
 
     const cfg = loadConfig();
-    if (!cfg) return;
-    if (cfg.memory?.extractFacts === false) return; // user opted out
+    if (!cfg) {
+      hookLog(`capture cwd=${real} event=Stop -> no config`);
+      return;
+    }
+    if (cfg.memory?.extractFacts === false) {
+      hookLog(`capture cwd=${real} event=Stop -> extractFacts off`);
+      return; // user opted out
+    }
 
-    const brain = resolveExtractionBrain(cfg);
-    if (!brain) return; // no usable brain -> quietly do nothing
+    const { brain, diag } = resolveExtractionBrain(cfg);
+    if (!brain) {
+      hookLog(
+        `capture cwd=${real} event=Stop -> no usable brain (defaultBrain=${diag.defaultBrain} command=${diag.command} whichFound=${diag.whichFound} resolvedPath=${diag.resolvedPath ?? 'none'})`,
+      );
+      return; // no usable brain -> quietly do nothing
+    }
+    if (brain.kind === 'cli' && brain.commandOverride) {
+      hookLog(`capture cwd=${real} event=Stop -> brain resolved via absolute path (resolvedPath=${brain.commandOverride})`);
+    }
 
-    if (!data.transcript_path) return;
+    if (!data.transcript_path) {
+      hookLog(`capture cwd=${real} event=Stop -> no transcript_path`);
+      return;
+    }
     const history = readTranscript(data.transcript_path);
-    if (!history.length) return;
+    if (!history.length) {
+      let bytes = 0;
+      let lines = 0;
+      try {
+        const rawT = readFileSync(data.transcript_path, 'utf8');
+        bytes = Buffer.byteLength(rawT, 'utf8');
+        lines = countLines(rawT);
+      } catch {
+        // path unreadable; leave zeros
+      }
+      hookLog(`capture cwd=${real} event=Stop -> transcript parsed 0 turns (path=${data.transcript_path} bytes=${bytes} lines=${lines})`);
+      return;
+    }
+    const exchanges = Math.floor(history.length / 2);
+    if (exchanges < MIN_EXCHANGES_FOR_EXTRACTION) {
+      hookLog(`capture cwd=${real} event=Stop -> only ${exchanges} exchange(s) (<${MIN_EXCHANGES_FOR_EXTRACTION}, skipped)`);
+      return;
+    }
 
     const session = 'hook-' + (data.session_id || newSessionId());
     const n = await extractAndSaveFacts(brain, cfg, history, session);
+    hookLog(`capture cwd=${real} event=Stop -> saved ${n} fact${n === 1 ? '' : 's'}`);
     if (n > 0) process.stderr.write(`holt hook capture: saved ${n} fact${n === 1 ? '' : 's'} to ${memDir()}\n`);
 
     // Ambient wiki auto-sync: when the folder opted in (wiki.autoSync), fold the
@@ -469,7 +686,9 @@ async function capture(): Promise<void> {
       }
     }
   } catch (e) {
-    process.stderr.write('holt hook capture: ' + (e instanceof Error ? e.message : String(e)) + '\n');
+    const msg = e instanceof Error ? e.message : String(e);
+    process.stderr.write('holt hook capture: ' + msg + '\n');
+    hookLog(`capture cwd=${cwdForLog} event=Stop -> error: ${msg}`);
   }
 }
 
