@@ -128,9 +128,15 @@ export function parseFacts(raw: string): string[] {
   return out;
 }
 
-/** The resolved brain to call for a silent one-shot extraction. */
+/**
+ * The resolved brain to call for a silent one-shot extraction. For the CLI
+ * kind, `commandOverride` lets a caller (the Stop hook, which may run under a
+ * reduced PATH) pass an ABSOLUTE path to the brain binary that was resolved out
+ * of band; when set it replaces `command` for this one call without mutating the
+ * stored config. Omitting it keeps the existing behavior.
+ */
 type ExtractionBrain =
-  | { kind: 'cli'; id: BrainId }
+  | { kind: 'cli'; id: BrainId; commandOverride?: string }
   | { kind: 'api'; brain: ApiBrain };
 
 /**
@@ -150,7 +156,12 @@ export async function extractAndSaveFacts(
 
     // One silent call: no onChunk, so nothing streams to the terminal.
     const res = active.kind === 'cli'
-      ? await runBrain(cfg.brains[active.id], prompt)
+      ? await runBrain(
+          active.commandOverride
+            ? { ...cfg.brains[active.id], command: active.commandOverride }
+            : cfg.brains[active.id],
+          prompt,
+        )
       : await runApiBrain(active.brain, prompt);
     if (!res.ok) return 0;
 
