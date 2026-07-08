@@ -128,6 +128,17 @@ The one global file. It lists the absolute paths of folders you have trusted. Ho
 
 Remove a path here to un-trust that folder; Holt will ask again next time you run a command there.
 
+### Reading files outside the trusted folder (session-only)
+
+A brain launched by `holt chat` is scoped to the folder you launched it from. If a message references an absolute path (`/...` or `~/...`) that exists **outside** that folder, Holt prompts once per new directory: `Allow this session to access <dir> (outside this folder)? [y/N]`. On `y`, the file's containing directory is granted read access for the rest of the chat; on `n`, the message still goes to the brain, just without that folder. Two chat commands manage this: `/allow <path>` grants a folder with no prompt, and `/allowed` lists the current grants.
+
+These grants are **not configuration**: they live only in memory for the duration of the chat, are **never written to any file**, and reset the next time you run `holt chat` (default deny). They are also **read-oriented and Claude-Code-only**. When there are granted folders and the active brain is the Claude Code CLI (command `claude`), Holt appends these flags to the non-interactive invocation:
+
+- `--add-dir=<dir>` for each granted folder, so Claude Code's tools may reach paths outside the working directory;
+- `--allowedTools=Read,Glob,Grep` once, which pre-approves only the read tools so Claude Code does not need an interactive permission prompt (impossible in headless `claude -p` mode) and cannot write or run shell commands.
+
+The `--flag=value` form is deliberate: `--add-dir` and `--allowedTools` are variadic in the Claude CLI, so the space-separated form would swallow the trailing prompt. With a Codex/Gemini or API brain (no local file tools), external access is unavailable and Holt prints a one-line note instead of adding flags. To adjust the exact flags after real-world testing, edit `claudeAccessArgs` in `src/access.ts` (the single place they are defined).
+
 ## MCP server: `holt mcp`
 
 `holt mcp` runs Holt as an [MCP](https://modelcontextprotocol.io) server over stdio, so other tools (Claude Code, Cursor, Codex) can use this folder's memory. It exposes five tools: `recall`, `remember`, `list_skills`, `get_skill`, and `memory_stats`. Run `holt mcp setup` to print the client config snippets.

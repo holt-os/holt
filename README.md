@@ -71,13 +71,26 @@ Inside `holt chat`:
 /memory           memory stats. /memory <query> previews what recall would surface
 /output           show or set the save format: markdown | html
 /save [name]      save the last reply to a file in this folder
+/allow <path>     let this session read a folder outside this one (session-only)
+/allowed          list folders granted outside-access this session
 /setting          configure brains, API brains, and your launch command
 /clear            forget this session (saved memory stays)
 /help             show commands
 /exit             leave
 ```
 
+A line that starts with `/` is treated as a command only when its first word is a real command. So a message like `/Users/me/resume.docx summarize this` (or a URL, or any sentence that opens with a slash) is sent to the brain as-is, never dropped as an "unknown command".
+
 The point of `/brain`: Holt owns the transcript, so you can start a thread on one model and hand it to another mid-conversation. The new brain picks up with the full context.
+
+### Reading files outside this folder
+
+Holt runs the brain in the folder you launched it from, so by default the brain only sees this folder. If a message references an absolute path (`/...` or `~/...`) that exists **outside** the folder, Holt asks first: `Allow this session to access <dir> (outside this folder)? [y/N]`. Answer `y` and it grants the file's **containing directory** read access for the rest of this chat. Answer `n` and the message still goes through, the brain just does not get that folder.
+
+- `/allow <path>` grants a folder up front with no prompt.
+- `/allowed` lists what you have granted.
+
+Grants are **in-memory and session-scoped**: nothing is written to disk, and they reset the next time you run `holt chat`. Access is **read-oriented** and only works with a **Claude Code** brain: Holt passes `--add-dir=<dir>` for each granted folder plus `--allowedTools=Read,Glob,Grep` so Claude Code can read (but not write) those files without an interactive permission prompt. With a Codex/Gemini or API brain, external file access is unavailable and Holt says so instead of adding flags. (If you need to tune the flags, they live in one place: `claudeAccessArgs` in `src/access.ts`.)
 
 ## Memory
 

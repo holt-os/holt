@@ -59,16 +59,24 @@ export interface BrainResult {
 /**
  * Run one turn against a brain CLI. Streams stdout chunks through onChunk as
  * they arrive and resolves with the full reply.
+ *
+ * `extraArgs` are inserted BEFORE the prompt (after the brain's own args), so
+ * callers can pass per-session flags such as Claude Code's `--add-dir=<dir>` for
+ * permission-gated access to folders outside the workspace. It defaults to [] so
+ * existing callers are unaffected. NOTE: the flags must be self-contained tokens
+ * (use the `--flag=value` form, not `--flag value`), because some CLI options
+ * are variadic and would otherwise swallow the trailing prompt positional.
  */
 export function runBrain(
   brain: BrainConfig,
   prompt: string,
   onChunk?: (chunk: string) => void,
+  extraArgs: string[] = [],
 ): Promise<BrainResult> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(brain.command, [...brain.args, prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(brain.command, [...brain.args, ...extraArgs, prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       resolve({ ok: false, text: `Could not launch "${brain.command}": ${(e as Error).message}` });
       return;
