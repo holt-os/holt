@@ -9,7 +9,8 @@ import { saveReply } from '../output';
 import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills';
 import { runSettings } from './setting';
 import { init } from './init';
-import { ensureTrusted } from '../workspace';
+import { ensureTrusted, workspace } from '../workspace';
+import { findOutsidePaths, resolveGrantDir, claudeAccessArgs } from '../access';
 import { c, createReader, createStatusBar, bar } from '../ui';
 
 /**
@@ -29,6 +30,25 @@ function statusLine(brainLabel: string, history: Turn[]): string {
   );
 }
 
+/**
+ * The set of recognized slash commands (first token, lowercased) and their
+ * aliases. A line starting with "/" is treated as a command ONLY when its first
+ * token is in here; anything else (a file path like /Users/..., a URL fragment,
+ * or a mistyped command) is sent to the brain verbatim instead of being dropped.
+ */
+const KNOWN_COMMANDS = new Set<string>([
+  'exit', 'quit', 'q',
+  'help', 'h',
+  'clear',
+  'memory', 'mem',
+  'output',
+  'save',
+  'setting', 'settings',
+  'brain',
+  'skill', 'skills',
+  'allow', 'allowed',
+]);
+
 function help(): void {
   console.log(c.dim([
     '  commands:',
@@ -37,6 +57,8 @@ function help(): void {
     '    /skill [name] [input]  run a skill, or list them. "holt skill" manages them.',
     '    /output [fmt]     show or set output format: markdown | html',
     '    /save [name]      save the last reply to a file in this folder',
+    '    /allow [path]     let this session read a folder outside this one (session-only)',
+    '    /allowed          list folders granted outside-access this session',
     '    /setting          configure brains, API brains, and your launch command',
     '    /clear            forget this session so far (saved memory stays)',
     '    /help             this list',
@@ -87,6 +109,10 @@ export async function chat(): Promise<void> {
   const history: Turn[] = [];
   let lastReply = '';
 
+  // In-memory, session-scoped grants for reading folders OUTSIDE this workspace.
+  // Never persisted; resets on the next `holt chat`. Default deny (empty).
+  const grantedDirs = new Set<string>();
+
   // Sticky bottom status bar on a TTY; a printed line per reply otherwise. The
   // sticky bar redraws in place (no scroll-spam); the non-TTY path preserves the
   // original behavior exactly, so piped/CI runs emit no escape codes.
@@ -107,7 +133,7 @@ export async function chat(): Promise<void> {
   if (embedOk && stats.withEmbeddings < stats.turns) {
     console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
   }
-  console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /setting  /clear  /help  /exit'));
+  console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /allow  /setting  /clear  /help  /exit'));
   showStatus();
 
   while (true) {
@@ -124,7 +150,10 @@ export async function chat(): Promise<void> {
       if (!inv) { console.log(c.dim('  no such skill. Try "holt skill list".')); continue; }
       promptOverride = inv.prompt;
       console.log(c.dim(`  running skill "${inv.skillName}"...`));
-    } else if (line.startsWith('/')) {
+    } else if (line.startsWith('/') && KNOWN_COMMANDS.has((line.slice(1).split(/\s+/)[0] || '').toLowerCase())) {
+      // A line starting with "/" is a command ONLY when its first token is a
+      // known command. Otherwise it falls through to the brain (see below), so a
+      // message like "/Users/.../resume.docx summarize this" is never dropped.
       const parts = line.slice(1).split(/\s+/);
       const cmd = (parts[0] || '').toLowerCase();
       const rest = parts.slice(1).join(' ');
@@ -215,6 +244,25 @@ export async function chat(): Promise<void> {
         continue;
       }
 
+      if (cmd === 'allowed') {
+        if (grantedDirs.size === 0) console.log(c.dim('  no folders outside this one are granted this session.'));
+        else {
+          console.log(c.dim('  granted this session (read-only):'));
+          for (const d of grantedDirs) console.log(c.dim(`    ${d}`));
+        }
+        continue;
+      }
+
+      if (cmd === 'allow') {
+        if (!rest) { console.log(c.dim('  usage: /allow <path>   (grants that path\'s folder read access for this session)')); continue; }
+        const dir = resolveGrantDir(rest);
+        grantedDirs.add(dir);
+        console.log(c.green(`  granted this session: ${dir}`));
+        continue;
+      }
+
+      // Unreachable in practice: the branch is gated on KNOWN_COMMANDS, so every
+      // command above has a handler. Kept as a defensive fallthrough.
       console.log(c.dim(`  unknown command: /${cmd}  (try /help)`));
       continue;
     }
@@ -229,21 +277,55 @@ export async function chat(): Promise<void> {
       continue;
     }
 
+    // External-folder access. If the message references absolute paths that exist
+    // OUTSIDE this workspace, ask once per new directory before granting the brain
+    // read access. Default deny; a "no" simply means the brain does not get access
+    // and we do NOT block the message. Skipped for /skill prompt overrides.
+    if (promptOverride === null) {
+      const outside = findOutsidePaths(line, workspace());
+      for (const dir of outside) {
+        if (grantedDirs.has(dir)) continue; // already granted this session; no re-prompt
+        const ans = ((await ask(c.dim(`  Allow this session to access ${dir} (outside this folder)? [y/N] `))) ?? '').trim().toLowerCase();
+        if (ans === 'y' || ans === 'yes') {
+          grantedDirs.add(dir);
+          console.log(c.green(`  granted this session: ${dir}`));
+        } else {
+          console.log(c.dim('  not granted.'));
+        }
+      }
+    }
+
     const remembered = await recall(line, session, 4);
+    // Branding: the pre-reply status line is always "Holt is thinking", never the
+    // underlying brain's label, so chat feels like Holt. The active brain still
+    // shows in the sticky status bar.
     const label = remembered.length
-      ? `${active.label} is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
-      : `${active.label} is thinking...`;
+      ? `Holt is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
+      : `Holt is thinking...`;
     console.log(c.dim(`  ${label}`) + '\n');
 
     const skillsBlock = skillsPromptBlock();
     const base = renderPrompt(history, line, remembered);
     const prompt = promptOverride ?? (skillsBlock ? skillsBlock + '\n\n' + base : base);
 
+    // Turn granted outside-dirs into brain flags. Only the Claude Code CLI brain
+    // (command "claude") supports file-tool scoping via --add-dir; for other CLI
+    // brains (Codex/Gemini) or API brains, external file access is not available,
+    // so we print a one-line note and add no flags.
+    let extraArgs: string[] = [];
+    if (grantedDirs.size > 0) {
+      if (active.kind === 'cli' && cfg.brains[active.id].command === 'claude') {
+        extraArgs = claudeAccessArgs(grantedDirs);
+      } else {
+        console.log(c.dim('  note: external file access is only available with a Claude Code brain; skipping granted folders this turn.'));
+      }
+    }
+
     // Stream the reply as it arrives, regardless of brain kind.
     let streamed = false;
     const onChunk = (chunk: string): void => { streamed = true; process.stdout.write(chunk); };
     const res = active.kind === 'cli'
-      ? await runBrain(cfg.brains[active.id], prompt, onChunk)
+      ? await runBrain(cfg.brains[active.id], prompt, onChunk, extraArgs)
       : await runApiBrain(active.brain, prompt, onChunk);
 
     if (res.ok) {
