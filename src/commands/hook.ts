@@ -373,6 +373,61 @@ function fileBytes(path: string | undefined): number {
   }
 }
 
+// ---- runtime: capture throttle state ----------------------------------------
+
+/**
+ * Claude Code fires the Stop event after EVERY assistant response, so once a
+ * session passes the 3-exchange minimum, capture() would re-run full fact
+ * extraction (a brain call) on every subsequent Stop. saveFact dedups, so it
+ * stays correct, but the repeated brain calls are wasteful and add latency at
+ * each turn's end. We throttle by remembering, per session, the exchange count
+ * at the last successful extraction, and only re-distilling once the session
+ * has gained at least THROTTLE_MIN_NEW_EXCHANGES new exchanges.
+ */
+
+/** Minimum new exchanges since the last capture before we re-distill a session. */
+const THROTTLE_MIN_NEW_EXCHANGES = 2;
+
+/** Per-session state file: ~/.holt/hook-state.json. */
+function hookStatePath(): string {
+  return join(GLOBAL_DIR, 'hook-state.json');
+}
+
+/** Shape of one session's throttle record. */
+interface HookSessionState {
+  lastExchanges: number;
+}
+type HookState = Record<string, HookSessionState>;
+
+/** Read the throttle store. A missing/corrupt file reads as empty. Never throws. */
+function readHookState(): HookState {
+  try {
+    const parsed = JSON.parse(readFileSync(hookStatePath(), 'utf8')) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as HookState;
+  } catch {
+    return {};
+  }
+}
+
+/** Look up the last processed exchange count for a session (0 if unknown). */
+function lastProcessedExchanges(state: HookState, sessionId: string): number {
+  const rec = state[sessionId];
+  return rec && typeof rec.lastExchanges === 'number' ? rec.lastExchanges : 0;
+}
+
+/** Record a successful extraction for a session. Best-effort; never throws. */
+function saveHookState(sessionId: string, exchanges: number): void {
+  try {
+    mkdirSync(GLOBAL_DIR, { recursive: true });
+    const state = readHookState();
+    state[sessionId] = { lastExchanges: exchanges };
+    writeFileSync(hookStatePath(), JSON.stringify(state, null, 2) + '\n', 'utf8');
+  } catch {
+    // throttle state is best-effort; never perturb the hook it serves
+  }
+}
+
 // ---- runtime: inject (UserPromptSubmit) -------------------------------------
 
 async function inject(): Promise<void> {
@@ -668,8 +723,23 @@ async function capture(): Promise<void> {
       return;
     }
 
+    // Throttle: Claude Code fires Stop after every response, so past the minimum
+    // we would re-distill on every turn. Only re-run extraction once the session
+    // has gained at least THROTTLE_MIN_NEW_EXCHANGES exchanges since we last
+    // captured it. With no session_id we cannot track state, so we process (as
+    // before) but do not persist. lastProcessed is 0 for a never-seen session.
+    const throttleId = data.session_id || null;
+    const lastProcessed = throttleId ? lastProcessedExchanges(readHookState(), throttleId) : 0;
+    if (throttleId && exchanges - lastProcessed < THROTTLE_MIN_NEW_EXCHANGES) {
+      hookLog(
+        `capture cwd=${real} event=Stop -> throttled (exchanges=${exchanges} lastProcessed=${lastProcessed}, need +${THROTTLE_MIN_NEW_EXCHANGES})`,
+      );
+      return;
+    }
+
     const session = 'hook-' + (data.session_id || newSessionId());
     const n = await extractAndSaveFacts(brain, cfg, history, session);
+    if (throttleId) saveHookState(throttleId, exchanges);
     hookLog(`capture cwd=${real} event=Stop -> saved ${n} fact${n === 1 ? '' : 's'}`);
     if (n > 0) process.stderr.write(`holt hook capture: saved ${n} fact${n === 1 ? '' : 's'} to ${memDir()}\n`);
 
