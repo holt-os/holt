@@ -35,9 +35,31 @@ npm install -g @holt-os/holt
 
 ```bash
 cd ~/where-you-want-to-work
-holt init      # trust this folder, choose and install brains, sign in, set defaults
-holt chat      # start talking (or use your custom command, e.g. `ai`)
+holt           # start your assistant (or use your custom command, e.g. `ai`)
 ```
+
+That is it. Bare `holt` sets the folder up the first time (trust, brain, memory hooks) and then launches the **real interactive brain** (Claude Code, Codex, or Gemini), branded as Holt. Run `holt help` for the full command list, and `holt chat` for the lightweight REPL described further down.
+
+Prefer to step through setup on its own first? `holt init` still does that, then `holt` starts the session.
+
+## What bare `holt` does
+
+`holt` (with no command) is the front door: **your assistant, with memory of you.**
+
+1. **Sets up if needed.** In a fresh folder it runs onboarding (trust, pick a brain, memory). In an already-configured folder it just makes sure the folder is trusted, the memory directory exists, and the [ambient memory hooks](#ambient-memory-for-claude-code-holt-hook) are installed.
+2. **Launches the real interactive brain.** It hands the terminal to the brain's own interactive session (`claude`, `codex`, or `gemini` with no `-p` and no prompt), so you keep the brain's full power: agentic edits, tool use, the permission UI, MCP. This is different from `holt chat`, which is a lightweight REPL that shells out to the brain once per turn.
+3. **Brands the session as Holt.** See [Branding](#branding-holt-forward) below.
+
+If your default brain is a **direct API brain** (no interactive TUI), bare `holt` prints a one-line note and starts `holt chat` instead, since that path supports API brains.
+
+### Branding (Holt-forward)
+
+- **Banner.** Holt prints its banner before the brain takes over.
+- **Identity.** Holt injects a short "you are Holt" system prompt so the session presents as your assistant, not the underlying model. For **Claude Code** this uses `--append-system-prompt=<text>` (confirmed to exist and work in interactive mode). Codex and Gemini have no such flag, so Holt writes the identity into a managed project context file the brain reads on startup (`AGENTS.md` for Codex, `GEMINI.md` for Gemini), and never clobbers a file you already have. The identity text lives in one place: `HOLT_IDENTITY` in `src/commands/launch.ts`.
+- **Status line.** For Claude Code, Holt sets the status line to `Holt` by merging a minimal `statusLine` into the **project** file `./.claude/settings.json` (never your global `~/.claude/settings.json`), non-destructively and with a backup, and only if you have not set one yourself.
+- **Residual chrome.** Claude Code has no flag to suppress its own welcome banner, so that (and any brain-specific chrome) still shows. Holt brands what it can and accepts the rest.
+
+The exact Claude Code flags and where to tune them: `brandingFlags` and `brandStatusLine` in `src/commands/launch.ts`; the interactive invocation per brain is the `INTERACTIVE_ARGS` map in the same file.
 
 ## First run
 
@@ -57,7 +79,7 @@ During `holt init` you:
 1. **Trust the folder.**
 2. **Choose brains** (claude, codex, gemini). Holt installs any you pick that are missing.
 3. **Sign in.** For a newly installed brain, Holt starts that tool's own login (browser or its own prompt). Holt never stores your credentials.
-4. **Pick a default** brain and, optionally, a **launch command**: a short word like `ai` that starts `holt chat`. Holt installs it as a tiny launcher next to its own binary, so it works immediately in the same terminal, no sourcing or restart needed.
+4. **Pick a default** brain and, optionally, a **launch command**: a short word like `ai` that starts `holt` (your assistant). Holt installs it as a tiny launcher next to its own binary, so it works immediately in the same terminal, no sourcing or restart needed.
 5. **Enable semantic memory.** If you say yes, Holt sets up a local [Ollama](https://ollama.com) with a small embed model so recall works by meaning, fully offline.
 
 ## Using it
@@ -484,8 +506,11 @@ With no profile yet, `holt write` still works using a plain, natural voice.
 ## Commands
 
 ```
+holt                 start your assistant: set up if needed, then launch the real
+                     interactive brain (Claude Code/Codex/Gemini), branded as Holt
+holt launch          same as bare "holt"
 holt init            set up (trust, brains, sign-in, defaults) for this folder
-holt chat            start a session that remembers past ones
+holt chat            lightweight REPL that remembers past ones (used for API brains)
 holt run <task>      run one task non-interactively (recall, brain, remember)
 holt schedule        run a task on a timer: add | list | remove
 holt routine         named, reusable, scheduled jobs: add | run | list | show | remove

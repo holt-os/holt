@@ -70,7 +70,7 @@ export async function init(): Promise<void> {
     aliasWorked = r.ok;
     if (r.ok && r.immediate) aliasNote = c.green(`  "${aliasAns}" is ready to use right now (launcher at ${r.file}).`);
     else if (r.ok) {
-      aliasNote = c.green(`  alias "${aliasAns}" -> holt chat added to ${r.file}`);
+      aliasNote = c.green(`  alias "${aliasAns}" -> holt added to ${r.file}`);
       aliasNeedsSource = r.file;
     } else aliasNote = c.red('  ' + r.message);
   }

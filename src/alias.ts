@@ -93,7 +93,7 @@ function launcherBinDir(): string | null {
 
 function installRcAlias(name: string): AliasResult {
   const file = rcFile();
-  const block = `${START}\nalias ${name}="holt chat"\n${END}`;
+  const block = `${START}\nalias ${name}="holt"\n${END}`;
   try {
     let content = existsSync(file) ? readFileSync(file, 'utf8') : '';
     const re = new RegExp(`${START}[\\s\\S]*?${END}`);
@@ -162,7 +162,7 @@ export function installAlias(name: string): AliasResult {
         }
       }
       try {
-        writeFileSync(file, `#!/bin/sh\n${SHIM_MARKER}\nexec holt chat "$@"\n`, 'utf8');
+        writeFileSync(file, `#!/bin/sh\n${SHIM_MARKER}\nexec holt "$@"\n`, 'utf8');
         chmodSync(file, 0o755);
         writeState({ name, kind: 'bin', file });
         return { ok: true, kind: 'bin', file, immediate: true };
@@ -218,7 +218,7 @@ export function currentAlias(): string | null {
   }
   // Older versions only wrote the rc block; detect it for continuity.
   try {
-    const m = readFileSync(rcFile(), 'utf8').match(/alias\s+([^\s=]+)="holt chat"/);
+    const m = readFileSync(rcFile(), 'utf8').match(/alias\s+([^\s=]+)="holt(?: chat)?"/);
     return m ? (m[1] as string) : null;
   } catch {
     return null;
