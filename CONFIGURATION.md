@@ -65,6 +65,8 @@ To point a brain at a different CLI or add flags, edit `command` / `args`. See t
 
 Written only when you paste a raw key while connecting an API brain. One optional key per provider (`anthropic`, `openai`, `gemini`), file mode `600`. Prefer env vars if you rotate keys often; delete the file to forget every stored key.
 
+**Signed-out brains.** A CLI brain (Claude Code, Codex, Gemini) that is logged out replies in its own prose (for example "Not logged in, please run /login" or "Invalid API key"), sometimes with a zero exit code. Holt recognizes that state, shows a hint pointing at `holt login <brain>` instead of relaying the text, and does not store the exchange (so `holt chat` cannot loop on it). To fix it: run `holt login <brain>` in a terminal, or type `/login` inside `holt chat` to hand off to the brain's own sign-in. For an API brain, add or fix its key with `holt setting` (or the env vars above).
+
 ## Writing voice profile: `~/.holt/voice.json`
 
 Your writing voice, built by `holt voice` and used by `holt write`. It is **global to you**, not per folder, so the same voice follows you everywhere. File mode `600`, because it can hold excerpts of your own writing. It is a plain JSON file you can hand edit; after changing `answers` or `samples`, run `holt voice` to re-synthesize the `style`.

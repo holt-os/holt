@@ -74,6 +74,7 @@ Inside `holt chat`:
 /allow <path>     let this session read a folder outside this one (session-only)
 /allowed          list folders granted outside-access this session
 /setting          configure brains, API brains, and your launch command
+/login [brain]    sign in to a CLI brain (hands off to its own sign-in, then exits)
 /clear            forget this session (saved memory stays)
 /help             show commands
 /exit             leave
@@ -82,6 +83,8 @@ Inside `holt chat`:
 A line that starts with `/` is treated as a command only when its first word is a real command. So a message like `/Users/me/resume.docx summarize this` (or a URL, or any sentence that opens with a slash) is sent to the brain as-is, never dropped as an "unknown command".
 
 The point of `/brain`: Holt owns the transcript, so you can start a thread on one model and hand it to another mid-conversation. The new brain picks up with the full context.
+
+If a reply says your brain is signed out (or shows an "invalid API key" style message), run `holt login <brain>` in a terminal, or type `/login` right in the chat to hand off to the brain's own sign-in. For an API brain, run `holt setting` to add or fix its key. Holt detects that state and shows this hint instead of relaying the loop-inducing text, and it does not store the exchange.
 
 ### Reading files outside this folder
 

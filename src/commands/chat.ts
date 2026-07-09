@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
-import { isInstalled, renderPrompt, runBrain, MAX_REPLAY_TURNS, type Turn } from '../brains';
+import { isInstalled, renderPrompt, runBrain, looksLikeAuthError, MAX_REPLAY_TURNS, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { extractAndSaveFacts } from '../facts';
@@ -8,6 +8,7 @@ import { syncWiki, resolveBrainMaintainer } from '../wiki';
 import { saveReply } from '../output';
 import { listSkills, skillsPromptBlock, resolveSkillInvocation } from '../skills';
 import { runSettings } from './setting';
+import { login } from './login';
 import { init } from './init';
 import { ensureTrusted, workspace } from '../workspace';
 import { findOutsidePaths, resolveGrantDir, claudeAccessArgs } from '../access';
@@ -44,6 +45,7 @@ const KNOWN_COMMANDS = new Set<string>([
   'output',
   'save',
   'setting', 'settings',
+  'login',
   'brain',
   'skill', 'skills',
   'allow', 'allowed',
@@ -60,6 +62,7 @@ function help(): void {
     '    /allow [path]     let this session read a folder outside this one (session-only)',
     '    /allowed          list folders granted outside-access this session',
     '    /setting          configure brains, API brains, and your launch command',
+    '    /login [brain]    sign in to a CLI brain (hands off to its own sign-in)',
     '    /clear            forget this session so far (saved memory stays)',
     '    /help             this list',
     '    /exit             leave',
@@ -206,6 +209,30 @@ export async function chat(): Promise<void> {
         continue;
       }
 
+      if (cmd === 'login') {
+        // Resolve the login target: a named brain arg, else the active brain.
+        const rawArg = parts[1] || '';
+        const target = rawArg ? resolveActive(cfg, rawArg.toLowerCase()) : active;
+        if (rawArg && !target) {
+          console.log(c.dim(`  "${rawArg}" is not a known brain. Sign in to a CLI brain: /login <${BRAIN_IDS.join('|')}>`));
+          continue;
+        }
+        if (target && target.kind === 'api') {
+          // API brains sign in via a stored key, not an interactive handoff.
+          console.log(c.dim(`  ${target.label} uses an API key, not a sign-in. Run "holt setting" to add or fix its key.`));
+          continue;
+        }
+        // CLI brain: hand off to its own sign-in. This needs a clean terminal
+        // (stdio inherit), so detach the sticky bar and CLOSE the reader first,
+        // exactly like the no-config branch, then exit cleanly afterward.
+        const targetId = (target as { kind: 'cli'; id: BrainId }).id;
+        sb.detach();
+        close();
+        await login(targetId);
+        console.log(c.dim('\n  Signed in. Run "holt chat" again to continue.\n'));
+        return;
+      }
+
       if (cmd === 'brain') {
         const cliEnabled = BRAIN_IDS.filter((id) => (cfg as HoltConfig).brains[id].enabled) as string[];
         const apiIds = cfg.apiBrains.map((a) => a.id);
@@ -327,6 +354,20 @@ export async function chat(): Promise<void> {
     const res = active.kind === 'cli'
       ? await runBrain(cfg.brains[active.id], prompt, onChunk, extraArgs)
       : await runApiBrain(active.brain, prompt, onChunk);
+
+    // A signed-out brain often replies in its own prose ("Not logged in, please
+    // run /login" / "Invalid API key"), sometimes with exit code 0. Catch that
+    // BEFORE the ok/not-ok split so both cases are handled: print Holt's own hint
+    // and skip storing entirely, so nothing lands in memory and there is no loop.
+    if (looksLikeAuthError(res.text)) {
+      const hint = active.kind === 'cli'
+        ? `  ${active.label} looks signed out. Run "holt login ${active.id}" in a terminal, or type /login here.`
+        : `  ${active.label} has no working key. Run "holt setting" to add or fix it.`;
+      if (!streamed || !res.text.endsWith('\n')) console.log('');
+      console.log(c.red(hint) + '\n');
+      showStatus();
+      continue;
+    }
 
     if (res.ok) {
       if (!streamed) console.log(res.text);
