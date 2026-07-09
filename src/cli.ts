@@ -5,6 +5,7 @@
  * recall, skills, and a knowledge graph view of everything it remembers.
  */
 import { init } from './commands/init';
+import { launch } from './commands/launch';
 import { chat } from './commands/chat';
 import { setting } from './commands/setting';
 import { login } from './commands/login';
@@ -38,8 +39,11 @@ const HELP = `${BANNER}
 Usage: holt <command>
 
 Commands:
+  (no command)    Start your assistant: sets up if needed, then launches the real
+                  interactive brain (Claude Code, Codex, Gemini), branded as Holt
   init            Trust this folder, choose and install brains, sign in, set defaults
-  chat            Start a session. It remembers past sessions in this folder
+  launch          Same as bare "holt": start your assistant
+  chat            Lightweight REPL that remembers past sessions (used for API brains)
   run <task>      Run one task non-interactively: recall, brain executes, remember
   schedule        Fire "holt run" on a timer: holt schedule [add | list | remove]
   routine         Named, reusable, scheduled jobs: holt routine [add | run | list | remove]
@@ -57,7 +61,7 @@ Commands:
   setting         Configure brains, API brains, and your launch command (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
   version         Print the Holt version
-  help            Show this help
+  help            Show this help (bare "holt" starts your assistant, not this)
 
 Holt runs in the folder you launch it from and asks to trust it first.
 Brains are agent CLIs on your machine (claude, codex, gemini) or direct
@@ -71,6 +75,13 @@ async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
     case undefined:
+      // Bare `holt` starts your assistant: auto-setup, then the real interactive
+      // brain, branded as Holt. `holt help` (below) shows usage.
+      await launch();
+      break;
+    case 'launch':
+      await launch();
+      break;
     case 'help':
     case '-h':
     case '--help':

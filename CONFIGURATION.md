@@ -287,11 +287,29 @@ If you set a launch word during `holt init` or `holt setting`, Holt writes a fen
 
 ```bash
 # >>> holt launch alias >>>
-alias ai="holt chat"
+alias ai="holt"
 # <<< holt launch alias <<<
 ```
 
-The block is idempotent, re-running replaces it. Reset the launch word to `holt` in `holt setting` to remove the block, or delete the block by hand.
+The alias runs bare `holt` (your assistant), so your custom word starts the branded interactive session. When the launcher can install as a tiny executable next to the `holt` binary instead (the usual case for global npm installs), that shim runs `exec holt "$@"` and works immediately with no sourcing. The block/shim is idempotent, re-running replaces it. Reset the launch word to `holt` in `holt setting` to remove it, or delete the block by hand.
+
+## Bare `holt`: your assistant (launch)
+
+Bare `holt` (and its explicit alias `holt launch`) is the front door. It ensures the folder is set up (trust, a default brain, the memory dir, and the [ambient memory hooks](#ambient-memory-hooks-holt-hook)), then launches the **real interactive brain** in its own TUI, so you keep the brain's full agentic power. This is distinct from `holt chat`, the lightweight per-turn REPL. If the default brain is a direct API brain (no TUI), bare `holt` prints a note and falls back to `holt chat`.
+
+**Interactive invocation per brain** (the `INTERACTIVE_ARGS` map in `src/commands/launch.ts`), deliberately separate from the non-interactive `args` in `config.json` (which hold `-p` / `exec` for the REPL path):
+
+| Brain  | Interactive command | NOT this (non-interactive) |
+|--------|---------------------|----------------------------|
+| claude | `claude`            | `claude -p`                |
+| codex  | `codex`             | `codex exec`               |
+| gemini | `gemini`            | `gemini -p`                |
+
+**Branding.** Holt prints its banner, injects a "you are Holt" identity, and sets the status line:
+
+- **Identity.** For Claude Code, Holt passes `--append-system-prompt=<text>` (this flag exists and works in interactive mode, confirmed against the installed `claude`). Codex and Gemini have no equivalent flag, so Holt writes the identity into a managed project context file the brain reads on startup: `AGENTS.md` (Codex) or `GEMINI.md` (Gemini). Holt only writes such a file if it is absent or already Holt-managed, never clobbering yours. The identity text is `HOLT_IDENTITY` in `src/commands/launch.ts` (one place to edit). The per-brain flag builder is `brandingFlags` in the same file.
+- **Status line.** For Claude Code, Holt merges a minimal `statusLine` (`{ "type": "command", "command": "printf \"Holt\"" }`) into the **project** `./.claude/settings.json`, never your global `~/.claude/settings.json`. It backs the file up first (`.holt-bak`), preserves all other settings, and skips if you already have a `statusLine`. See `brandStatusLine` in `src/commands/launch.ts`.
+- **Residual chrome.** Claude Code has no flag to suppress its own welcome banner, so it still appears. Holt brands the banner, identity, and status line, and accepts the rest.
 
 ## Environment variables
 
