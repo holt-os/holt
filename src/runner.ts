@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { loadConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig } from './config';
-import { isInstalled, renderPrompt, runBrain } from './brains';
+import { isInstalled, renderPrompt, runBrain, looksLikeAuthError } from './brains';
 import { runApiBrain } from './apibrain';
 import { recall, appendTurn, embed, newSessionId } from './memory';
 import { skillsPromptBlock } from './skills';
@@ -88,6 +88,16 @@ export async function runTask(task: string, opts: RunOptions = {}): Promise<RunR
     const res = active.kind === 'cli'
       ? await runBrain(cfg.brains[active.id], prompt, opts.onChunk)
       : await runApiBrain(active.brain, prompt, opts.onChunk);
+
+    // A signed-out brain often replies (even with exit code 0) in its own prose,
+    // e.g. "Invalid API key. Please run /login". Catch that before storing so we
+    // never persist an auth-error turn and never relay the loop-inducing text.
+    if (looksLikeAuthError(res.text)) {
+      const hint = active.kind === 'cli'
+        ? `${active.label} is signed out. Run "holt login ${active.id}" (or add an API key with "holt setting").`
+        : `${active.label} is signed out. Run "holt setting" to add or fix its API key.`;
+      return { ok: false, text: hint, brainLabel: active.label };
+    }
 
     if (res.ok && opts.store !== false) {
       const now = Date.now();

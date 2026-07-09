@@ -57,6 +57,29 @@ export interface BrainResult {
 }
 
 /**
+ * Does a brain reply look like a signed-out / auth-failure message? Brains
+ * (Claude Code, Codex, Gemini) report a logged-out state or bad key in their
+ * OWN prose, sometimes on stdout with a zero exit code, so Holt cannot rely on
+ * exit codes alone. This is a heuristic gate: it recognizes the common
+ * "please run /login" / "invalid api key" / "unauthorized" phrasings so Holt
+ * can show its own guidance instead of relaying the loop-inducing text.
+ *
+ * Kept specific on purpose: it matches auth PHRASES, not stray words, so an
+ * innocuous sentence like "please read the login page before you sign up" does
+ * not trip it. Pure and never throws.
+ */
+export function looksLikeAuthError(text: string): boolean {
+  try {
+    if (!text) return false;
+    const re =
+      /run\s+\/login|not\s+logged\s+in|invalid\s+api\s+key|please\s+(?:log|sign)\s+in|authentication\s+(?:failed|required)|unauthorized|session\s+(?:has\s+)?expired|no\s+api\s+key|login\s+required|credit\s+balance\s+is\s+too\s+low/i;
+    return re.test(text);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Run one turn against a brain CLI. Streams stdout chunks through onChunk as
  * they arrive and resolves with the full reply.
  *
