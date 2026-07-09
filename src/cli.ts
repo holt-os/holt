@@ -15,6 +15,7 @@ import { skillCmd } from './commands/skill';
 import { graph } from './commands/graph';
 import { mcp } from './commands/mcp';
 import { hook } from './commands/hook';
+import { statusline } from './commands/statusline';
 import { run } from './commands/run';
 import { schedule } from './commands/schedule';
 import { routine } from './commands/routine';
@@ -123,6 +124,12 @@ async function main(): Promise<void> {
       break;
     case 'hook':
       await hook(process.argv[3], process.argv.slice(4));
+      break;
+    case 'statusline':
+      // Internal/plumbing: Claude Code invokes this via a project statusLine set
+      // by launch's brandStatusLine. It reads a status JSON off stdin and prints
+      // one line ("Holt · folder · model"). Not in HELP on purpose.
+      await statusline();
       break;
     case 'run':
       await run(process.argv.slice(3));

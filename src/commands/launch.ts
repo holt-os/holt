@@ -24,30 +24,103 @@
  *      NOT re-extract. Print a short goodbye and return.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { loadConfig, BRAIN_IDS, findApiBrain, type BrainId, type HoltConfig } from '../config';
 import { isInstalled } from '../brains';
 import { runInteractive } from '../install';
 import { ensureTrusted, isTrusted, trustDir, workspace } from '../workspace';
 import { memDir } from '../memory';
+import { resolveHoltPath } from '../scheduler';
 import { hook } from './hook';
 import { chat } from './chat';
 import { init } from './init';
 import { c, createReader } from '../ui';
 
 /**
- * The Holt banner shown before the brain takes over the terminal. Mirrors the
- * banner in cli.ts but trimmed for a launch context (no full usage block).
+ * ============================================================================
+ * LAUNCH INTRO BOX  --  the tidy bordered "getting started" box Holt prints to
+ * stdout right before the brain takes over the terminal.
+ * ============================================================================
+ * This is one of only TWO surfaces Holt controls at launch (the other is the
+ * status line): Claude Code renders its OWN welcome box AFTER this, and that box
+ * cannot be customized or suppressed. So this box lands ABOVE Claude Code's box.
+ * That placement is accepted; keep this box compact so it does not dominate.
+ *
+ * Style: light box-drawing borders (ASCII-safe unicode; NO em-dash U+2014),
+ * amber accent via `c.accent`, muted detail via `c.dim`. Everything below is
+ * editable in one place; the tips live in the TIPS array.
  */
-const LAUNCH_BANNER = `
-  ██╗  ██╗ ██████╗ ██╗  ████████╗
-  ██║  ██║██╔═══██╗██║  ╚══██╔══╝
-  ███████║██║   ██║██║     ██║
-  ██╔══██║██║   ██║██║     ██║
-  ██║  ██║╚██████╔╝███████╗██║
-  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝
-  Your assistant, with memory of you. Starting your session...
-`;
+
+/** The one-line tagline under the wordmark. */
+const TAGLINE = 'Holt: your assistant, with memory that lasts.';
+
+/**
+ * The getting-started tips. Each entry is one short line. Edit here to tune the
+ * intro box copy; the renderer wraps them in a bulleted, bordered layout.
+ */
+const TIPS: string[] = [
+  'Just talk. I remember what matters across our sessions.',
+  'Ask me to recall something we discussed before.',
+  'If I ever say I am signed out, type /login.',
+  'Everything stays on your machine.',
+];
+
+/**
+ * Render the intro box as a single string ready to print. `brainLabel` is the
+ * resolved active brain's label; it shows in the context line so the user knows
+ * what is actually running under Holt.
+ *
+ * Layout (light box-drawing set):
+ *   ┌──────────────────────────────────────────────┐
+ *   │  HOLT                                          │
+ *   │  Holt: your assistant, with memory that lasts. │
+ *   │                                                │
+ *   │  Running <brain> as Holt. Memory is on ...     │
+ *   │                                                │
+ *   │  • <tip>                                        │
+ *   │  ...                                            │
+ *   └──────────────────────────────────────────────┘
+ *
+ * Width is derived from the longest line so the border always fits. The wordmark
+ * is amber; borders and tips are dim so the box stays quiet.
+ */
+function renderIntroBox(): string {
+  const wordmark = 'HOLT';
+  // Deliberately does NOT name the underlying brain: the whole point is that this
+  // reads as Holt, whichever agent (Claude Code / Codex / Gemini) is underneath.
+  const context = 'Your assistant is ready. Memory is on for this folder.';
+  const bullets = TIPS.map((t) => `• ${t}`);
+
+  // The plain-text content lines (no color), used to size the box.
+  const content: string[] = [wordmark, TAGLINE, '', context, '', ...bullets];
+
+  const pad = 2; // spaces of inner left/right padding
+  const inner = Math.max(...content.map((l) => l.length));
+  const span = inner + pad * 2;
+
+  const top = '┌' + '─'.repeat(span) + '┐';
+  const bottom = '└' + '─'.repeat(span) + '┘';
+
+  // Build a bordered row. `colorize` lets us tint specific lines while keeping
+  // the border math based on the PLAIN text length (color codes add no width).
+  const row = (plain: string, colorize: (s: string) => string = (s) => s): string => {
+    const right = ' '.repeat(inner - plain.length);
+    const body = ' '.repeat(pad) + colorize(plain) + right + ' '.repeat(pad);
+    return c.dim('│') + body + c.dim('│');
+  };
+
+  const lines: string[] = [];
+  lines.push(c.dim(top));
+  lines.push(row(wordmark, c.accent));
+  lines.push(row(TAGLINE, c.dim));
+  lines.push(row(''));
+  lines.push(row(context, c.dim));
+  lines.push(row(''));
+  for (const b of bullets) lines.push(row(b, c.dim));
+  lines.push(c.dim(bottom));
+  return '\n' + lines.join('\n') + '\n';
+}
 
 /**
  * ============================================================================
@@ -139,9 +212,15 @@ function brandContextFile(id: BrainId): string | null {
 // ---- Claude Code project status line ("Holt") -------------------------------
 
 /**
- * Point the Claude Code status line at "Holt" by merging a minimal `statusLine`
+ * Point the Claude Code status line at Holt by merging a minimal `statusLine`
  * into the PROJECT settings file (./.claude/settings.json), NOT the user's
- * global ~/.claude/settings.json. Non-destructive:
+ * global ~/.claude/settings.json. The command it writes is `<holt> statusline`
+ * (the resolved absolute `holt` binary + the internal `statusline` subcommand),
+ * so Claude Code pipes its status JSON to it and gets back a richer, live line:
+ * `Holt · <folder> · <model>`. Using the resolved absolute path keeps the status
+ * line working even when Claude Code renders under a reduced PATH.
+ *
+ * Non-destructive:
  *  - never overwrites an existing statusLine the user already set;
  *  - backs up the file before writing;
  *  - preserves all other settings (including the Holt hooks we just installed).
@@ -165,7 +244,7 @@ function brandStatusLine(): boolean {
     if (existsSync(path)) copyFileSync(path, `${path}.holt-bak`);
     settings.statusLine = {
       type: 'command',
-      command: 'printf "Holt"',
+      command: `${resolveHoltPath()} statusline`,
     };
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify(settings, null, 2) + '\n', 'utf8');
@@ -213,13 +292,25 @@ export async function ensureSetup(): Promise<void> {
   if (!isTrusted(ws)) trustDir(ws);
   mkdirSync(memDir(), { recursive: true });
   // Install the Claude Code memory hooks (inject + capture) so the interactive
-  // session is memory-aware. Reuses the exact install path in hook.ts; it is
-  // idempotent and prints its own one-liners. Never let a hook failure block the
-  // launch.
+  // session is memory-aware. Only when they are NOT already wired in, so a normal
+  // launch stays quiet (the hook command prints its own one-liners). Never let a
+  // hook failure block the launch.
+  if (!hooksAlreadyInstalled()) {
+    try {
+      await hook('install', []);
+    } catch {
+      // ambient memory is best-effort; the session still launches without it
+    }
+  }
+}
+
+/** True if Holt's Claude Code hooks are already in the global settings.json. */
+function hooksAlreadyInstalled(): boolean {
   try {
-    await hook('install', []);
+    const p = join(homedir(), '.claude', 'settings.json');
+    return existsSync(p) && readFileSync(p, 'utf8').includes('holt hook');
   } catch {
-    // ambient memory is best-effort; the session still launches without it
+    return false;
   }
 }
 
@@ -276,7 +367,10 @@ export async function launch(): Promise<void> {
   }
 
   // ---- 3. Brand -------------------------------------------------------------
-  console.log(c.accent(LAUNCH_BANNER));
+  // Print the Holt intro box (wordmark + tagline + context + tips). This is the
+  // one pre-launch surface we control; it appears ABOVE Claude Code's own
+  // welcome box (which cannot be suppressed).
+  console.log(renderIntroBox());
 
   const flags = [...brandingFlags(target.id)];
   if (flags.length === 0) {
@@ -289,7 +383,7 @@ export async function launch(): Promise<void> {
   // ---- 4. Launch interactively ---------------------------------------------
   const interactive = INTERACTIVE_ARGS[target.id];
   const args = [...interactive, ...flags];
-  console.log(c.dim(`  Starting ${target.label} as Holt. Type "exit" in the session to leave.\n`));
+  console.log(c.dim('  Starting your Holt session. Type "exit" to leave.\n'));
   await runInteractive(cfg.brains[target.id].command, args);
 
   // ---- 5. On exit -----------------------------------------------------------
