@@ -8,7 +8,7 @@ Holt is an open-source, self-hosted personal agent OS. Clone it, pick your skill
 
 > **Status: shipping and usable today.** Working now:
 >
-> - `holt init` + `holt chat` with any brain (Claude Code, Codex, Gemini, or a direct API key), and mid-conversation brain switching that keeps context.
+> - Bare `holt` launches the real interactive brain (Claude Code, Codex, or Gemini) branded as Holt, setting the folder up the first time. `holt chat` stays as a lightweight REPL for direct API brains, with mid-conversation brain switching that keeps context.
 > - Per-folder memory with semantic recall and distilled facts, ambient memory for Claude Code (`holt hook`), and opt-in memory shared across folders (`holt memory global`).
 > - A self-maintaining knowledge wiki (`holt wiki`) and an interactive knowledge graph (`holt graph`) that can also ingest your code and docs into communities.
 > - Run a task once, on a schedule, or as a named routine (`holt run` / `schedule` / `routine`), and reach it from your phone over Telegram.
