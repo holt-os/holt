@@ -267,6 +267,10 @@ A source may carry a `#<subdir>` suffix (split on the first `#`) that points at 
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
 
+### holt-jobsearch
+
+A full skill suite built on Holt that runs an entire job search: build your profile, score a role on fit, tailor your resume, write the cover letter, prep for interviews, read your inbox for replies, draft follow-ups, and track the pipeline. The core runs with zero API keys; search, inbox, and follow-up are opt-in connectors. It drafts everything and leaves you the submit button. Find it at [holt-os/holt-jobsearch](https://github.com/holt-os/holt-jobsearch), or `holt skill search job` to install the pieces from the registry.
+
 ### Built-in skills
 
 Holt ships with a small, curated set of general-purpose skills, available in every folder with no setup. They are read-only (`holt skill remove` will not delete them); to change one, create a workspace or global skill with the same name and it takes over.
