@@ -35,6 +35,21 @@ import {
   registryUrl,
   REGISTRY_REPO_URL,
 } from '../registry';
+import { loadConfig, BRAIN_IDS, type BrainId } from '../config';
+import { syncAllBrains, removeSkillArtifacts } from '../skillcompiler';
+
+/**
+ * Brains to (re)compile skill commands for after a skill is added or removed.
+ * We do not yet know which brain the user will launch, so we target every
+ * ENABLED CLI brain; if there is no config, all three, so the built-ins still
+ * compile. Best-effort and quiet: syncAllBrains only reports real changes.
+ */
+function enabledBrains(): BrainId[] {
+  const cfg = loadConfig();
+  if (!cfg) return [...BRAIN_IDS];
+  const on = BRAIN_IDS.filter((b) => cfg.brains[b].enabled);
+  return on.length ? on : [...BRAIN_IDS];
+}
 
 function usage(): void {
   console.log(c.dim([
@@ -319,7 +334,7 @@ async function cmdAdd(source: string | undefined, global: boolean, refresh: bool
   // here rather than being misread as a registry name.
   const { base } = splitSubpath(source);
   if (isGitUrl(base) || existsSync(resolve(base))) {
-    installFromSource(source, scope);
+    if (installFromSource(source, scope)) syncAllBrains(enabledBrains());
     return;
   }
 
@@ -339,7 +354,7 @@ async function cmdAdd(source: string | undefined, global: boolean, refresh: bool
     return;
   }
   console.log(c.dim(`\n  Resolved "${hit.name}" -> ${hit.source}`));
-  installFromSource(hit.source, scope);
+  if (installFromSource(hit.source, scope)) syncAllBrains(enabledBrains());
 }
 
 /** `holt skill search <query>`: filter the registry index and print a table. */
@@ -482,6 +497,11 @@ async function cmdRemove(name: string | undefined, ask: (q: string) => Promise<s
   const a = ((await ask(`\n  Delete ${scope} skill "${clean}"? [y/N] `)) ?? '').trim().toLowerCase();
   if (a === 'y' || a === 'yes') {
     rmSync(target, { recursive: true, force: true });
+    // Clean up any native brain commands Holt compiled from this skill, then
+    // recompile so each brain's manifest reflects the removal. Only ever touches
+    // artifacts Holt itself wrote (tracked in the per-folder manifest).
+    removeSkillArtifacts(clean);
+    syncAllBrains(enabledBrains());
     console.log(c.green('  Removed.\n'));
   } else {
     console.log(c.dim('  Kept.\n'));

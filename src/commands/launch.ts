@@ -32,6 +32,7 @@ import { runInteractive } from '../install';
 import { ensureTrusted, isTrusted, trustDir, workspace } from '../workspace';
 import { memDir } from '../memory';
 import { resolveHoltPath } from '../scheduler';
+import { syncSkillCommands } from '../skillcompiler';
 import { hook } from './hook';
 import { chat } from './chat';
 import { init } from './init';
@@ -379,6 +380,12 @@ export async function launch(): Promise<void> {
     if (ctx) console.log(c.dim(`  Holt identity: ${ctx}`));
   }
   if (target.id === 'claude') brandStatusLine();
+
+  // Compile every enabled skill into THIS brain's native custom-command format
+  // (Claude project skills / Gemini TOML commands / Codex prompts) so skills
+  // appear as real slash commands in the session. Active brain only; idempotent
+  // and quiet on repeat launches; never throws out of launch.
+  syncSkillCommands(target.id);
 
   // ---- 4. Launch interactively ---------------------------------------------
   const interactive = INTERACTIVE_ARGS[target.id];
