@@ -267,6 +267,18 @@ A source may carry a `#<subdir>` suffix (split on the first `#`) that points at 
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
 
+### Skills as native commands
+
+When you `holt launch` an interactive brain, every enabled skill is also compiled into that brain's own custom-command format, so it shows up as a real slash command inside the session (in addition to Holt's own `/skill <name>`). This happens automatically for the built-ins too, and re-syncs on `holt skill add` and `holt skill remove`. It is idempotent and stays quiet on repeat launches when nothing changed.
+
+Fidelity depends on the brain:
+
+- **Claude Code (full power):** each skill folder is copied verbatim into the project's `.claude/skills/<name>/`, so multi-file skills, tool restrictions, and frontmatter are preserved one to one.
+- **Gemini CLI (best effort):** a `.gemini/commands/<name>.toml` custom command is generated from the skill's description and instructions, with your input passed through Gemini's `{{args}}`. Prompt only.
+- **Codex (best effort):** a markdown custom prompt is written to Codex's global prompts dir (`~/.codex/prompts/holt-<name>.md`, prefixed because Codex prompts are global rather than per project), with your input passed through Codex's `$ARGUMENTS`. Prompt only.
+
+It never clobbers a command or skill you authored: if a target already exists and Holt did not write it, that one is skipped with a one-line note. Holt tracks everything it generates in `./.holt/skill-commands.json`, so `holt skill remove` cleans up only Holt's own compiled commands and never touches yours. A skill that has no instructions to express (for the prompt-only brains) is skipped rather than emitted as a broken command.
+
 ### holt-jobsearch
 
 A full skill suite built on Holt that runs an entire job search: build your profile, score a role on fit, tailor your resume, write the cover letter, prep for interviews, read your inbox for replies, draft follow-ups, and track the pipeline. The core runs with zero API keys; search, inbox, and follow-up are opt-in connectors. It drafts everything and leaves you the submit button. Find it at [holt-os/holt-jobsearch](https://github.com/holt-os/holt-jobsearch), or `holt skill search job` to install the pieces from the registry.

@@ -311,6 +311,13 @@ Bare `holt` (and its explicit alias `holt launch`) is the front door. It ensures
 - **Status line.** For Claude Code, Holt merges a minimal `statusLine` (`{ "type": "command", "command": "printf \"Holt\"" }`) into the **project** `./.claude/settings.json`, never your global `~/.claude/settings.json`. It backs the file up first (`.holt-bak`), preserves all other settings, and skips if you already have a `statusLine`. See `brandStatusLine` in `src/commands/launch.ts`.
 - **Residual chrome.** Claude Code has no flag to suppress its own welcome banner, so it still appears. Holt brands the banner, identity, and status line, and accepts the rest.
 
+**Skills as native commands.** Right after the brain is resolved, launch compiles every enabled skill into the launched brain's own custom-command format, so skills appear as real slash commands in the session (see `syncSkillCommands` in `src/skillcompiler.ts`). It runs for the **active brain only**, and also runs on `holt skill add` / `holt skill remove` (for every enabled brain, since the launch brain is not yet known). It is idempotent and quiet: a target already matching what Holt last wrote is left alone, so a repeat launch prints nothing.
+
+- **Claude Code (full fidelity).** Each skill folder is copied verbatim into the project's `.claude/skills/<name>/`, preserving multi-file skills, tool restrictions, and frontmatter one to one.
+- **Gemini CLI (best effort).** A `.gemini/commands/<name>.toml` is generated from the skill's `description` and body (required field `prompt`, optional `description`), with user input via Gemini's `{{args}}`. Project-level; verified against the Gemini CLI custom-commands docs.
+- **Codex (best effort).** A markdown custom prompt is written to Codex's **global** prompts dir, `~/.codex/prompts/holt-<name>.md`, with YAML frontmatter (`description`, `argument-hint`) and user input via `$ARGUMENTS`. Codex has no project-level prompts, so the files are global and namespaced with a `holt-` prefix; verified against the Codex custom-prompts docs.
+- **Non-destructive + tracked.** A target Holt did not write is never overwritten: if one already exists it is skipped with a one-line note. Every artifact Holt generates is recorded per brain in `./.holt/skill-commands.json` (with a content hash), so `holt skill remove` and the stale-artifact sweep delete only Holt's own compiled commands, never yours. A skill with nothing to express for a prompt-only brain is skipped rather than emitted broken. None of this ever throws out of the launch path.
+
 ## Environment variables
 
 | Variable          | Default                   | Effect                                                                 |
