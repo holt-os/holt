@@ -1,21 +1,33 @@
-# Holt
+<p align="center">
+  <img src="https://raw.githubusercontent.com/holt-os/holt/main/docs/header.png" alt="Holt" width="100%">
+</p>
 
-**Everything you know, kept and connected.**
+<p align="center">
+  <a href="https://www.npmjs.com/package/@holt-os/holt"><img src="https://img.shields.io/npm/v/@holt-os/holt?logo=npm&color=cb3837&label=npm" alt="npm version"></a>
+  <a href="https://github.com/holt-os/homebrew-tap"><img src="https://img.shields.io/badge/brew-holt--os%2Ftap%2Fholt-f5a623?logo=homebrew&logoColor=white" alt="Homebrew tap"></a>
+  <img src="https://img.shields.io/node/v/@holt-os/holt?logo=node.js&logoColor=white&color=3c873a" alt="Node version">
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-ready-4dd0e1?logo=modelcontextprotocol&logoColor=white" alt="MCP ready"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-Holt is an open-source, self-hosted personal agent OS. Clone it, pick your skills, choose your brain, and it runs on *your* machine with persistent memory you can actually see and walk.
+***
 
-> A *holt* is a small wood: a sheltered place where things are kept and grow. That's the idea. A private home for your knowledge that compounds over time.
+**Holt is an open-source personal agent OS: any LLM as its brain, private memory it can see and walk, running entirely on your own machine.** Clone it, pick your skills, choose your brain. Your knowledge stays local and compounds over time.
 
-> **Status: shipping and usable today.** Working now:
->
-> - Bare `holt` launches the real interactive brain (Claude Code, Codex, or Gemini) branded as Holt, setting the folder up the first time. `holt chat` stays as a lightweight REPL for direct API brains, with mid-conversation brain switching that keeps context.
-> - Per-folder memory with semantic recall and distilled facts, ambient memory for Claude Code (`holt hook`), and opt-in memory shared across folders (`holt memory global`).
-> - A self-maintaining knowledge wiki (`holt wiki`) and an interactive knowledge graph (`holt graph`) that can also ingest your code and docs into communities.
-> - Run a task once, on a schedule, or as a named routine (`holt run` / `schedule` / `routine`), and reach it from your phone over Telegram.
-> - Draft in your own voice with anti-AI checks (`holt write`), and size your setup with `holt doctor`.
-> - Ten built-in skills plus a community registry (`holt skill search`), and an MCP server so Claude Code, Cursor, or Codex can read this folder's memory.
+> A *holt* is a small wood: a sheltered place where things are kept and grow. That is the idea. A private home for your knowledge that compounds over time.
 
----
+### Highlights
+
+- **Any brain, one assistant.** Bare `holt` launches a real interactive brain (Claude Code, Codex, or Gemini) branded as Holt, or you connect a direct API brain with your own key. Switch mid-conversation and keep the full context.
+- **Private memory you can see.** Per-folder semantic recall and distilled facts, an interactive knowledge graph (`holt graph`), and a self-maintaining wiki (`holt wiki`) over everything you tell it. Nothing leaves your machine.
+- **Ambient by default.** `holt hook` wires memory into Claude Code so it recalls and remembers with no manual step, and an MCP server exposes the same memory to Cursor and Codex.
+- **Runs your work.** Run a task once, on a schedule, or as a named routine, and reach it from your phone over Telegram.
+- **Extensible, zero-infra.** Ten built-in skills plus a git-based community registry (`holt skill search`) in the portable `SKILL.md` format.
+- **Writes in your voice.** `holt write` drafts in a style Holt learns from you, with built-in anti-AI checks.
+
+> **Status:** shipping and usable today. Every capability above works now.
+
+***
 
 ## Install
 
@@ -116,6 +128,8 @@ Holt runs the brain in the folder you launched it from, so by default the brain 
 - `/allowed` lists what you have granted.
 
 Grants are **in-memory and session-scoped**: nothing is written to disk, and they reset the next time you run `holt chat`. Access is **read-oriented** and only works with a **Claude Code** brain: Holt passes `--add-dir=<dir>` for each granted folder plus `--allowedTools=Read,Glob,Grep` so Claude Code can read (but not write) those files without an interactive permission prompt. With a Codex/Gemini or API brain, external file access is unavailable and Holt says so instead of adding flags. (If you need to tune the flags, they live in one place: `claudeAccessArgs` in `src/access.ts`.)
+
+***
 
 ## Memory
 
@@ -246,6 +260,8 @@ holt wiki setup               # recommend a local model for this machine's RAM
 `holt wiki setup` (or the hint in `holt wiki status`) reads your total RAM and recommends a model: under 16 GB it discourages local (use the brain); 16 GB suggests `qwen2.5:7b` (tight alongside the embed model, an always-on machine is a better host); 24 to 32 GB suggests `qwen2.5:14b`; 48 GB and up suggests `qwen2.5:32b`.
 
 Wiki pages also participate in recall: each page is embedded and indexed like a high-value fact, so `holt memory search` and chat recall can surface synthesized knowledge, not just raw turns.
+
+***
 
 ## Skills
 
@@ -388,6 +404,8 @@ To uninstall, run `holt hook remove` (add `--project` if you installed with `--p
 
 Replies print as markdown. `/output html` (or `markdown`) switches the save format and persists it. `/save [name]` writes the last reply to the current folder: `.md`, or a small self-contained dark-theme `.html` page.
 
+***
+
 ## Run tasks, schedule them, reach them from your phone
 
 Beyond interactive chat, Holt can run a task once, on a timer, or from Telegram. The selected brain does the task; your memory is recalled into it automatically.
@@ -522,6 +540,8 @@ By default a second pass checks the draft against the rubric and fixes any tells
 
 With no profile yet, `holt write` still works using a plain, natural voice.
 
+***
+
 ## Commands
 
 ```
@@ -576,6 +596,8 @@ Built in always-shippable phases toward a full-vision v1:
 ## Contributing
 
 Holt is built to be extended without touching the core. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+***
 
 ## License
 

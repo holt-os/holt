@@ -1,0 +1,56 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1512"/>
+      <stop offset="0.55" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#0a0e12"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#e8a33d" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#e8a33d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4dd0e1" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#4dd0e1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="320" fill="url(#bg)"/>
+  <rect width="1200" height="320" fill="none"/>
+
+  <!-- knowledge-graph constellation, right side -->
+  <g stroke="#3a4a44" stroke-width="1.4" opacity="0.7">
+    <line x1="880" y1="90"  x2="980" y2="150"/>
+    <line x1="980" y1="150" x2="1080" y2="110"/>
+    <line x1="980" y1="150" x2="1030" y2="230"/>
+    <line x1="880" y1="90"  x2="820" y2="180"/>
+    <line x1="820" y1="180" x2="1030" y2="230"/>
+    <line x1="1080" y1="110" x2="1120" y2="200"/>
+    <line x1="1030" y1="230" x2="1120" y2="200"/>
+    <line x1="820" y1="180" x2="900" y2="250"/>
+    <line x1="900" y1="250" x2="1030" y2="230"/>
+  </g>
+
+  <g>
+    <circle cx="880"  cy="90"  r="26" fill="url(#glowA)"/>
+    <circle cx="980"  cy="150" r="30" fill="url(#glowC)"/>
+    <circle cx="1030" cy="230" r="26" fill="url(#glowA)"/>
+    <circle cx="1120" cy="200" r="22" fill="url(#glowC)"/>
+
+    <circle cx="880"  cy="90"  r="7" fill="#e8a33d"/>
+    <circle cx="980"  cy="150" r="8.5" fill="#4dd0e1"/>
+    <circle cx="1080" cy="110" r="5.5" fill="#f5f3ee"/>
+    <circle cx="1030" cy="230" r="7" fill="#e8a33d"/>
+    <circle cx="1120" cy="200" r="6" fill="#4dd0e1"/>
+    <circle cx="820"  cy="180" r="6" fill="#f5f3ee"/>
+    <circle cx="900"  cy="250" r="5" fill="#e8a33d"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="96" y="150" font-size="118" font-weight="700" letter-spacing="-3" fill="#f5f3ee">holt</text>
+  <rect x="100" y="176" width="58" height="5" rx="2.5" fill="#e8a33d"/>
+
+  <!-- tagline -->
+  <text x="100" y="212" font-size="30" font-weight="500" fill="#c7d2cb">Everything you know, kept and connected.</text>
+  <text x="100" y="250" font-size="19" font-weight="400" fill="#7f8f87">Open-source personal agent OS &#183; any LLM &#183; private memory you can see and walk</text>
+</svg>
