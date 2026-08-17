@@ -137,11 +137,10 @@ It picks the rc file from `$SHELL` (`.zshrc`, `.bashrc`, or `.profile`), and the
 
 ## Where it is heading
 
-None of the following is built yet. This is the roadmap, kept here so the direction is legible; do not read it as a description of current behavior.
+Most of the original roadmap has shipped and is described above: direct API brains (`src/apibrain.ts`), skills in the agentskills.io format (`src/skills.ts`, `src/commands/skill.ts`), the knowledge graph view (`holt graph`), channels (Telegram bot + `holt notify`), and the MCP server (`holt mcp`). See the README roadmap for the authoritative shipped/next list.
 
-- **Direct API brains.** Talk to model providers directly as an alternative to driving an installed CLI, for people who would rather paste a key than install a tool.
-- **Skills.** Install, search, and publish skills in the [agentskills.io](https://agentskills.io) format, so behavior is portable in and out of Holt.
-- **Knowledge graph view.** A way to see and walk your own memory as a graph, not just recall from it.
+Still ahead:
+
 - **Local-executes / cloud-reviews orchestration.** A local model does the work; a cloud model reviews only the risky or irreversible steps before they run.
-- **Channels.** Reach Holt from somewhere other than the terminal (for example Telegram).
-- **MCP plugin boundary.** A stable plugin surface, likely over the Model Context Protocol, so providers, channels, and tools can be added without touching the core.
+- **Docs site and richer skill publishing.** A proper documentation site and first-class publishing flow for the community skill registry.
+- **More channels.** Reaching Holt from more places than the terminal and Telegram.

@@ -3,7 +3,7 @@
  * the reply via Server-Sent Events. Zero dependencies (global fetch only).
  */
 import type { ApiBrain } from './config';
-import { resolveApiKey, keyHint, PROVIDER_ENV } from './config';
+import { resolveApiKey, keyHint, PROVIDER_ENV, PROVIDER_WIRE, PROVIDER_BASE_URL } from './config';
 
 export interface ApiResult {
   ok: boolean;
@@ -35,7 +35,8 @@ function dataLines(event: string): string[] {
 }
 
 /** Pull the delta text out of a single provider JSON payload. */
-function extractDelta(provider: ApiBrain['provider'], json: unknown): string {
+function extractDelta(providerIn: ApiBrain['provider'], json: unknown): string {
+  const provider = PROVIDER_WIRE[providerIn];
   const j = json as Record<string, unknown>;
   if (provider === 'anthropic') {
     if (j['type'] === 'content_block_delta') {
@@ -65,7 +66,8 @@ interface RequestSpec {
 }
 
 function buildRequest(brain: ApiBrain, key: string, prompt: string): RequestSpec {
-  if (brain.provider === 'anthropic') {
+  const wire = PROVIDER_WIRE[brain.provider];
+  if (wire === 'anthropic') {
     return {
       url: 'https://api.anthropic.com/v1/messages',
       headers: {
@@ -81,9 +83,12 @@ function buildRequest(brain: ApiBrain, key: string, prompt: string): RequestSpec
       }),
     };
   }
-  if (brain.provider === 'openai') {
+  if (wire === 'openai') {
+    // OpenAI itself, plus OpenAI-compatible providers (Kimi/Moonshot, Grok/xAI)
+    // and any self-hosted gateway the user points baseUrl at.
+    const base = (brain.baseUrl ?? PROVIDER_BASE_URL[brain.provider] ?? 'https://api.openai.com/v1').replace(/\/$/, '');
     return {
-      url: 'https://api.openai.com/v1/chat/completions',
+      url: `${base}/chat/completions`,
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${key}`,

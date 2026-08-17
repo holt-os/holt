@@ -5,12 +5,35 @@
  * HTTP with your own key. CLI brains need no keys; API brains resolve a key from
  * an env var or the global credentials file.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { wsConfigPath, ensureWsDir, GLOBAL_DIR } from './workspace';
+import { c, isQuietMode } from './ui';
 
 export type BrainId = 'claude' | 'codex' | 'gemini';
-export type Provider = 'anthropic' | 'openai' | 'gemini';
+export type Provider = 'anthropic' | 'openai' | 'gemini' | 'kimi' | 'grok';
+
+/**
+ * The wire protocol a provider speaks. Kimi (Moonshot) and Grok (xAI) expose
+ * OpenAI-compatible chat-completions endpoints, so they reuse that format with
+ * their own base URL.
+ */
+export type WireFormat = 'anthropic' | 'openai' | 'gemini';
+
+export const PROVIDER_WIRE: Record<Provider, WireFormat> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  gemini: 'gemini',
+  kimi: 'openai',
+  grok: 'openai',
+};
+
+/** Chat-completions base URL for OpenAI-wire providers. */
+export const PROVIDER_BASE_URL: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  kimi: 'https://api.moonshot.ai/v1',
+  grok: 'https://api.x.ai/v1',
+};
 
 export interface BrainConfig {
   id: BrainId;
@@ -26,6 +49,7 @@ export interface ApiBrain {
   provider: Provider;
   model: string;
   keyEnv?: string; // optional env var name that holds the key
+  baseUrl?: string; // optional endpoint override (self-hosted / OpenAI-compatible gateways)
 }
 
 export type OutputFormat = 'markdown' | 'html';
@@ -61,7 +85,9 @@ export interface HoltConfig {
 
 export const BRAIN_DEFS: Record<BrainId, { label: string; command: string; args: string[] }> = {
   claude: { label: 'Claude Code', command: 'claude', args: ['-p'] },
-  codex: { label: 'Codex (OpenAI)', command: 'codex', args: ['exec'] },
+  // --skip-git-repo-check: codex exec otherwise refuses to run in folders that
+  // are not git repositories, which is nearly every non-developer folder.
+  codex: { label: 'Codex (OpenAI)', command: 'codex', args: ['exec', '--skip-git-repo-check'] },
   gemini: { label: 'Gemini CLI', command: 'gemini', args: ['-p'] },
 };
 
@@ -74,13 +100,15 @@ export const BRAIN_SETUP: Record<BrainId, { install: string[]; login: string[] }
 
 export const BRAIN_IDS: BrainId[] = ['claude', 'codex', 'gemini'];
 
-export const PROVIDERS: Provider[] = ['anthropic', 'openai', 'gemini'];
+export const PROVIDERS: Provider[] = ['anthropic', 'openai', 'gemini', 'kimi', 'grok'];
 
 /** Suggested default model per provider (user may type anything). */
 export const PROVIDER_MODEL_SUGGESTION: Record<Provider, string> = {
   anthropic: 'claude-sonnet-4-6',
   openai: 'gpt-5',
   gemini: 'gemini-2.5-flash',
+  kimi: 'kimi-k2-turbo-preview',
+  grok: 'grok-4',
 };
 
 /** Standard env var each provider falls back to. */
@@ -88,6 +116,8 @@ export const PROVIDER_ENV: Record<Provider, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   gemini: 'GEMINI_API_KEY',
+  kimi: 'MOONSHOT_API_KEY',
+  grok: 'XAI_API_KEY',
 };
 
 export function defaultConfig(): HoltConfig {
@@ -107,15 +137,30 @@ export function defaultConfig(): HoltConfig {
   };
 }
 
+/** Path the last damaged config was moved to, if a repair happened this process. */
+export let lastConfigRepair: string | null = null;
+
 export function loadConfig(): HoltConfig | null {
   const path = wsConfigPath();
   if (!existsSync(path)) return null;
+  let raw: string;
   try {
-    const cfg = JSON.parse(readFileSync(path, 'utf8')) as Partial<HoltConfig>;
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const cfg = JSON.parse(raw) as Partial<HoltConfig>;
     const base = defaultConfig();
     // Graceful migration from v2 (and any missing field): fill defaults.
     const brains = (cfg.brains ?? {}) as Record<BrainId, BrainConfig>;
     for (const id of BRAIN_IDS) if (!brains[id]) brains[id] = base.brains[id];
+    // Configs written before the codex git-check fix carry args: ['exec'],
+    // which fails in non-git folders. Upgrade them in place.
+    const cx = brains.codex;
+    if (cx && cx.command === 'codex' && Array.isArray(cx.args) && !cx.args.includes('--skip-git-repo-check')) {
+      cx.args = [...cx.args, '--skip-git-repo-check'];
+    }
     // Additive v4 -> v5 migration: fill the wiki block from defaults, never lose
     // existing fields. Mirrors the way the memory block was added earlier.
     const wikiIn = (cfg.wiki ?? {}) as Partial<WikiSettings>;
@@ -140,6 +185,23 @@ export function loadConfig(): HoltConfig | null {
       wiki,
     };
   } catch {
+    // The file exists but is not valid JSON. Silently using defaults would make
+    // the user's settings vanish with no explanation, so move the damaged file
+    // aside (it is never deleted) and say so; setup then regenerates it fresh.
+    const backup = `${path}.broken-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
+    try {
+      renameSync(path, backup);
+      lastConfigRepair = backup;
+      if (!isQuietMode()) {
+        console.error(
+          c.red('\n  Your Holt settings file was damaged, so it was moved aside.') +
+            c.dim(`\n  Saved at: ${backup}`) +
+            c.dim('\n  Holt will set this folder up fresh; your memory is untouched.\n'),
+        );
+      }
+    } catch {
+      // Could not move it; behave as before (treat as unconfigured).
+    }
     return null;
   }
 }
@@ -162,7 +224,7 @@ export function findApiBrain(cfg: HoltConfig, id: string): ApiBrain | undefined 
 
 // ---- global credentials (~/.holt/credentials.json) ----
 
-export type Credentials = { anthropic?: string; openai?: string; gemini?: string };
+export type Credentials = Partial<Record<Provider, string>>;
 
 export function credentialsPath(): string {
   return join(GLOBAL_DIR, 'credentials.json');

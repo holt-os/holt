@@ -195,7 +195,7 @@ A brain is an agent CLI installed and logged in on your machine. No API keys to 
 
 ### Direct API brains
 
-A brain can also be a direct provider connection: no CLI install, your own key. Run `holt setting` and pick `[c] connect API brain`, or say yes to the API-brain question in `holt init`. Choose a provider (anthropic, openai, gemini), a model (suggestions offered, type anything), and a short name. For the key, paste a raw key (stored in `~/.holt/credentials.json`, mode 600) or give the name of an env var that holds it. Resolution order: the brain's `keyEnv`, the credentials file, then the standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). API brains stream and share memory exactly like CLI brains; switch with `/brain <name>`.
+A brain can also be a direct provider connection: no CLI install, your own key. Run `holt setting` and pick `[c] connect API brain`, or say yes to the API-brain question in `holt init`. Choose a provider (anthropic, openai, gemini, kimi, grok), a model (suggestions offered, type anything), and a short name. Kimi (Moonshot) and Grok (xAI) speak the OpenAI wire format at their own endpoints; any other OpenAI-compatible endpoint (a gateway, a self-hosted server) works too via an optional `baseUrl` on the brain in `.holt/config.json`. For the key, paste a raw key (stored in `~/.holt/credentials.json`, mode 600) or give the name of an env var that holds it. Resolution order: the brain's `keyEnv`, the credentials file, then the standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`, `XAI_API_KEY`). API brains stream and share memory exactly like CLI brains; switch with `/brain <name>`.
 
 ## See your memory: `holt graph`
 
@@ -556,6 +556,11 @@ holt routine         named, reusable, scheduled jobs: add | run | list | show | 
 holt telegram        chat with Holt from your phone: telegram [setup]
 holt notify [msg]    push a message to your phone over Telegram (stdin-friendly)
 holt doctor          check this machine and recommend how best to run Holt here
+                     ("holt doctor --fix" also repairs the common problems it finds:
+                      starts Ollama, pulls the embed model, mends a damaged config)
+holt tour            a 2-minute guided first run: ask, teach one fact, watch it remember
+holt update          get the latest Holt in one word (npm or Homebrew, auto-detected)
+holt reset           start this folder over (typed confirmation; your files untouched)
 holt voice           teach Holt your writing voice: add <file> | show | edit | clear
 holt write <what>    draft content in your voice with anti-AI checks (--type, --out, --fast)
 holt graph           see your memory as an interactive knowledge graph

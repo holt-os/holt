@@ -1,6 +1,17 @@
 /** Tiny terminal helpers. No dependencies. */
 import readline from 'node:readline';
 
+// Quiet mode: set for plumbing commands (statusline, mcp, hook inject/capture,
+// notify) whose stdout/stderr is consumed by another program, so incidental
+// human-facing notes (config repair, degraded-memory hints) must not print.
+let quiet = false;
+export function setQuietMode(q: boolean): void {
+  quiet = q;
+}
+export function isQuietMode(): boolean {
+  return quiet;
+}
+
 const on = process.stdout.isTTY && !process.env.NO_COLOR;
 const wrap = (code: string) => (s: string) => (on ? `\x1b[${code}m${s}\x1b[0m` : s);
 

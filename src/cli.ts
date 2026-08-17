@@ -22,9 +22,14 @@ import { routine } from './commands/routine';
 import { telegram } from './commands/telegram';
 import { notify } from './commands/notify';
 import { doctor } from './commands/doctor';
+import { tour } from './commands/tour';
+import { reset } from './commands/reset';
+import { update } from './commands/update';
 import { voice } from './commands/voice';
 import { write } from './commands/write';
 import { VERSION } from './version';
+import { setQuietMode } from './ui';
+import { handleCrash } from './crash';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -39,34 +44,43 @@ const BANNER = `
 const HELP = `${BANNER}
 Usage: holt <command>
 
-Commands:
-  (no command)    Start your assistant: sets up if needed, then launches the real
-                  interactive brain (Claude Code, Codex, Gemini), branded as Holt
-  init            Trust this folder, choose and install brains, sign in, set defaults
-  launch          Same as bare "holt": start your assistant
-  chat            Lightweight REPL that remembers past sessions (used for API brains)
-  run <task>      Run one task non-interactively: recall, brain executes, remember
-  schedule        Fire "holt run" on a timer: holt schedule [add | list | remove]
-  routine         Named, reusable, scheduled jobs: holt routine [add | run | list | remove]
-  telegram        Chat with Holt from your phone: holt telegram [setup]
-  notify [msg]    Push a message to your phone over Telegram (stdin-friendly)
-  voice           Teach Holt how you write: holt voice [add <file> | show | edit | clear]
+Start here:
+  (no command)    Start your assistant: sets up if needed, then launches your
+                  brain (Claude Code, Codex, Gemini), branded as Holt
+  tour            A 2-minute guided first run: ask, teach it one fact, watch it remember
+  doctor          Health check for this machine
+                  ("holt doctor --fix" also repairs the common problems for you)
+
+Every day:
+  run <task>      Do one task and remember it: holt run "draft my status update"
   write <what>    Draft content in your voice, with anti-AI checks: holt write "..." [--type]
-  memory          Inspect memory: holt memory [search <query> | embed | clear]
-  wiki            Your derived knowledge wiki: holt wiki [sync | rebuild | lint | list | show]
-  graph           See your memory as an interactive knowledge graph in the browser
-  skill           Manage skills: holt skill [list | show | create | add | remove]
-  doctor          Check this machine and recommend how best to run Holt here
-  mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
-  hook            Ambient memory for Claude Code: holt hook [install | remove | status]
-  setting         Configure brains, API brains, and your launch command (per folder)
+  voice           Teach Holt how you write: holt voice [add <file> | show | edit | clear]
+  memory          What Holt knows here: holt memory [search <q> | facts | embed | clear]
+  wiki            A tidy, linked notebook Holt keeps from your memory: holt wiki [sync | show]
+  graph           See everything Holt knows as a visual map in your browser
+  skill           Reusable how-tos you can share: holt skill [list | show | create | add]
+
+From your phone, while you sleep:
+  telegram        Chat with Holt from your phone: holt telegram setup
+  notify [msg]    Send yourself a phone message from any script (stdin-friendly)
+  schedule        Run a task on a timer: holt schedule [add | list | remove]
+  routine         Named, reusable, scheduled jobs: holt routine [add | run | list | remove]
+
+Housekeeping:
+  setting         Change brains, API connections, and your launch word (per folder)
   login <brain>   Sign in to a brain: claude, codex, or gemini
-  version         Print the Holt version
-  help            Show this help (bare "holt" starts your assistant, not this)
+  update          Get the latest Holt, in one word
+  reset           Start this folder over (asks first; your own files are untouched)
+  hook            Ambient memory inside plain Claude Code: holt hook [install | status]
+  mcp             Share Holt's memory with other AI apps (Claude Code, Cursor, Codex)
+  chat            Lightweight built-in chat, used for API brains
+  init            Full setup by hand (bare "holt" runs this for you when needed)
+  launch          Same as bare "holt": start your assistant
+  version | help  Print the version / show this help
 
 Holt runs in the folder you launch it from and asks to trust it first.
-Brains are agent CLIs on your machine (claude, codex, gemini) or direct
-API connections you add in settings.
+A "brain" is the AI doing the thinking: an agent CLI on your machine
+(claude, codex, gemini) or a direct API connection you add in settings.
 
 Docs: https://productsdecoded.com/holt
 Repo: https://github.com/holt-os/holt
@@ -74,6 +88,18 @@ Repo: https://github.com/holt-os/holt
 
 async function main(): Promise<void> {
   const cmd = process.argv[2];
+  // Plumbing commands whose output another program consumes: suppress
+  // incidental human-facing notes (config repair, hints) so we never corrupt
+  // a status line, an MCP stream, or a hook payload.
+  const sub = process.argv[3];
+  if (
+    cmd === 'statusline' ||
+    cmd === 'mcp' ||
+    cmd === 'notify' ||
+    (cmd === 'hook' && (sub === 'inject' || sub === 'capture'))
+  ) {
+    setQuietMode(true);
+  }
   switch (cmd) {
     case undefined:
       // Bare `holt` starts your assistant: auto-setup, then the real interactive
@@ -147,7 +173,16 @@ async function main(): Promise<void> {
       await notify(process.argv.slice(3));
       break;
     case 'doctor':
-      await doctor();
+      await doctor(process.argv.slice(3));
+      break;
+    case 'tour':
+      await tour();
+      break;
+    case 'reset':
+      await reset();
+      break;
+    case 'update':
+      await update();
       break;
     case 'voice':
       await voice(process.argv[3], process.argv.slice(4));
@@ -162,4 +197,8 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// No raw stack traces, ever: anything a command did not catch lands in the
+// crash handler, which logs the detail and prints a short human note.
+process.on('uncaughtException', handleCrash);
+process.on('unhandledRejection', handleCrash);
+main().catch(handleCrash);

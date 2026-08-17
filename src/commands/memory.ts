@@ -71,6 +71,9 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
     if (!q) { console.log(c.dim('\n  Usage: holt memory search <query>\n')); close(); return; }
     const hits = await recall(q, '__none__', 8);
     console.log('');
+    if (!(await embeddingsAvailable())) {
+      console.log(c.dim('  (memory is in keyword mode; run "holt doctor --fix" to turn semantic recall back on)'));
+    }
     if (hits.length === 0) console.log(c.dim('  Nothing relevant found.'));
     else for (const h of hits) {
       const when = new Date(h.turn.ts).toISOString().slice(0, 10);
