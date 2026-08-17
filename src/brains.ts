@@ -72,7 +72,7 @@ export function looksLikeAuthError(text: string): boolean {
   try {
     if (!text) return false;
     const re =
-      /run\s+\/login|not\s+logged\s+in|invalid\s+api\s+key|please\s+(?:log|sign)\s+in|authentication\s+(?:failed|required)|unauthorized|session\s+(?:has\s+)?expired|no\s+api\s+key|login\s+required|credit\s+balance\s+is\s+too\s+low/i;
+      /run\s+\/login|not\s+logged\s+in|invalid\s+api\s+key|please\s+(?:log|sign)\s+in|authentication\s+(?:failed|required)|unauthorized|session\s+(?:has\s+)?expired|no\s+api\s+key|login\s+required|credit\s+balance\s+is\s+too\s+low|set\s+an\s+auth\s+method|GEMINI_API_KEY/i;
     return re.test(text);
   } catch {
     return false;
