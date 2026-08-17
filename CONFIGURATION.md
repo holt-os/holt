@@ -51,7 +51,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
   - `args`: the non-interactive flags passed before the prompt. Holt invokes `command args... "<prompt>"` once per turn.
   - `enabled`: whether this brain is selectable in this folder. Set true only when the command is installed.
 
-- `apiBrains` (array): direct provider connections added via `holt setting` or `holt init`. Each entry: `id` (your short name), `provider` (`anthropic` | `openai` | `gemini`), `model` (free text), optional `keyEnv` (name of an env var holding the key). Key resolution order: `keyEnv`, then `~/.holt/credentials.json`, then the provider standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`).
+- `apiBrains` (array): direct provider connections added via `holt setting` or `holt init`. Each entry: `id` (your short name), `provider` (`anthropic` | `openai` | `gemini` | `kimi` | `grok`), `model` (free text), optional `keyEnv` (name of an env var holding the key), optional `baseUrl` (endpoint override for OpenAI-wire providers; use it to point at a gateway or a self-hosted OpenAI-compatible server). Kimi (Moonshot) and Grok (xAI) speak the OpenAI wire format at their own default endpoints. Key resolution order: `keyEnv`, then `~/.holt/credentials.json`, then the provider standard env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`, `XAI_API_KEY`).
 - `outputFormat` (`"markdown"` | `"html"`): how `/save` writes replies. Toggle in chat with `/output`.
 - `memory` (object): memory behavior. `extractFacts` (boolean, default `true`): when true, Holt distills 1 to 5 durable facts from the transcript when a chat session ends and saves them to `facts.md` plus the recall index. Set it to `false` to disable fact distillation entirely.
 - `wiki` (object): the derived knowledge wiki (see `holt wiki`).
@@ -63,7 +63,9 @@ To point a brain at a different CLI or add flags, edit `command` / `args`. See t
 
 ## Stored API keys: `~/.holt/credentials.json`
 
-Written only when you paste a raw key while connecting an API brain. One optional key per provider (`anthropic`, `openai`, `gemini`), file mode `600`. Prefer env vars if you rotate keys often; delete the file to forget every stored key.
+Written only when you paste a raw key while connecting an API brain. One optional key per provider (`anthropic`, `openai`, `gemini`, `kimi`, `grok`), file mode `600`. Prefer env vars if you rotate keys often; delete the file to forget every stored key.
+
+**Damaged config.** If `.holt/config.json` ever becomes invalid JSON, Holt does not silently ignore your settings: it moves the damaged file aside as `config.json.broken-<timestamp>` (never deleted), tells you, and treats the folder as ready for a fresh setup. Your memory is untouched. `holt doctor --fix` reports the repair.
 
 **Signed-out brains.** A CLI brain (Claude Code, Codex, Gemini) that is logged out replies in its own prose (for example "Not logged in, please run /login" or "Invalid API key"), sometimes with a zero exit code. Holt recognizes that state, shows a hint pointing at `holt login <brain>` instead of relaying the text, and does not store the exchange (so `holt chat` cannot loop on it). To fix it: run `holt login <brain>` in a terminal, or type `/login` inside `holt chat` to hand off to the brain's own sign-in. For an API brain, add or fix its key with `holt setting` (or the env vars above).
 

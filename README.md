@@ -494,6 +494,14 @@ It reports, section by section:
 - **Always-on / Telegram**: whether a Telegram bot is set up, and a note on hosting the bot on a low-power always-on machine while keeping heavy local models on a bigger one.
 - **Recommended next steps**: a short checklist built from whatever gaps it found.
 
+And when you would rather not do the steps yourself:
+
+```bash
+holt doctor --fix
+```
+
+`--fix` repairs the common problems in one go: starts Ollama when it is installed but not running, downloads the missing embed model, upgrades any memories saved while embeddings were off, and reports a damaged-config repair if one happened. It ends with a "Repairs" section listing exactly what it did (or "Nothing needed repair"). Every Holt error message points here, so the answer to "something is off" is always the same one command.
+
 It is read-only advice: it changes nothing, needs no trust, and always exits cleanly even when a probe fails.
 
 The RAM-to-model table lives in `src/specs.ts` (`LOCAL_MODEL_RECS` / `recommendLocalModel`), the single source of truth the wiki maintainer reads too.
