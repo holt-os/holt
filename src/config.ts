@@ -5,9 +5,10 @@
  * HTTP with your own key. CLI brains need no keys; API brains resolve a key from
  * an env var or the global credentials file.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { wsConfigPath, ensureWsDir, GLOBAL_DIR } from './workspace';
+import { c, isQuietMode } from './ui';
 
 export type BrainId = 'claude' | 'codex' | 'gemini';
 export type Provider = 'anthropic' | 'openai' | 'gemini';
@@ -107,11 +108,20 @@ export function defaultConfig(): HoltConfig {
   };
 }
 
+/** Path the last damaged config was moved to, if a repair happened this process. */
+export let lastConfigRepair: string | null = null;
+
 export function loadConfig(): HoltConfig | null {
   const path = wsConfigPath();
   if (!existsSync(path)) return null;
+  let raw: string;
   try {
-    const cfg = JSON.parse(readFileSync(path, 'utf8')) as Partial<HoltConfig>;
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const cfg = JSON.parse(raw) as Partial<HoltConfig>;
     const base = defaultConfig();
     // Graceful migration from v2 (and any missing field): fill defaults.
     const brains = (cfg.brains ?? {}) as Record<BrainId, BrainConfig>;
@@ -140,6 +150,23 @@ export function loadConfig(): HoltConfig | null {
       wiki,
     };
   } catch {
+    // The file exists but is not valid JSON. Silently using defaults would make
+    // the user's settings vanish with no explanation, so move the damaged file
+    // aside (it is never deleted) and say so; setup then regenerates it fresh.
+    const backup = `${path}.broken-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
+    try {
+      renameSync(path, backup);
+      lastConfigRepair = backup;
+      if (!isQuietMode()) {
+        console.error(
+          c.red('\n  Your Holt settings file was damaged, so it was moved aside.') +
+            c.dim(`\n  Saved at: ${backup}`) +
+            c.dim('\n  Holt will set this folder up fresh; your memory is untouched.\n'),
+        );
+      }
+    } catch {
+      // Could not move it; behave as before (treat as unconfigured).
+    }
     return null;
   }
 }

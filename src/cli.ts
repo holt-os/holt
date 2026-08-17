@@ -25,6 +25,8 @@ import { doctor } from './commands/doctor';
 import { voice } from './commands/voice';
 import { write } from './commands/write';
 import { VERSION } from './version';
+import { setQuietMode } from './ui';
+import { handleCrash } from './crash';
 
 const BANNER = `
   ██╗  ██╗ ██████╗ ██╗  ████████╗
@@ -57,6 +59,7 @@ Commands:
   graph           See your memory as an interactive knowledge graph in the browser
   skill           Manage skills: holt skill [list | show | create | add | remove]
   doctor          Check this machine and recommend how best to run Holt here
+                  ("holt doctor --fix" also repairs the common problems it finds)
   mcp             Serve this folder's memory to Claude Code, Cursor, Codex (holt mcp setup)
   hook            Ambient memory for Claude Code: holt hook [install | remove | status]
   setting         Configure brains, API brains, and your launch command (per folder)
@@ -74,6 +77,18 @@ Repo: https://github.com/holt-os/holt
 
 async function main(): Promise<void> {
   const cmd = process.argv[2];
+  // Plumbing commands whose output another program consumes: suppress
+  // incidental human-facing notes (config repair, hints) so we never corrupt
+  // a status line, an MCP stream, or a hook payload.
+  const sub = process.argv[3];
+  if (
+    cmd === 'statusline' ||
+    cmd === 'mcp' ||
+    cmd === 'notify' ||
+    (cmd === 'hook' && (sub === 'inject' || sub === 'capture'))
+  ) {
+    setQuietMode(true);
+  }
   switch (cmd) {
     case undefined:
       // Bare `holt` starts your assistant: auto-setup, then the real interactive
@@ -147,7 +162,7 @@ async function main(): Promise<void> {
       await notify(process.argv.slice(3));
       break;
     case 'doctor':
-      await doctor();
+      await doctor(process.argv.slice(3));
       break;
     case 'voice':
       await voice(process.argv[3], process.argv.slice(4));
@@ -162,4 +177,8 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// No raw stack traces, ever: anything a command did not catch lands in the
+// crash handler, which logs the detail and prints a short human note.
+process.on('uncaughtException', handleCrash);
+process.on('unhandledRejection', handleCrash);
+main().catch(handleCrash);

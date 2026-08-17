@@ -136,6 +136,9 @@ export async function chat(): Promise<void> {
   if (embedOk && stats.withEmbeddings < stats.turns) {
     console.log(c.dim(`  ${stats.turns - stats.withEmbeddings} older moments lack embeddings. Run "holt memory embed" to upgrade them.`));
   }
+  if (!embedOk) {
+    console.log(c.dim('  Recall works, but semantic memory is off. "holt doctor --fix" turns it on.'));
+  }
   console.log(c.dim('Type a message. Commands: /brain  /memory  /output  /save  /allow  /setting  /clear  /help  /exit'));
   showStatus();
 
