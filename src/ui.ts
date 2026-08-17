@@ -144,6 +144,26 @@ export function createStatusBar(): StatusBar {
 /** Ask returns the line, or null on EOF (so loops can end). */
 export type Ask = (q: string) => Promise<string | null>;
 
+/**
+ * A yes/no question that does not punish typos. Enter takes the default, y/n
+ * answer directly, and anything else re-asks (a stray keypress must never
+ * silently decline a feature or cancel a flow). EOF (null) takes the default so
+ * scripted and piped runs keep working. After three unclear answers it takes
+ * the default rather than looping forever.
+ */
+export async function askYesNo(ask: Ask, question: string, def: boolean): Promise<boolean> {
+  for (let tries = 0; tries < 3; tries++) {
+    const raw = await ask(question);
+    if (raw === null) return def;
+    const a = raw.trim().toLowerCase();
+    if (a === '') return def;
+    if (a === 'y' || a === 'yes') return true;
+    if (a === 'n' || a === 'no') return false;
+    console.log(c.dim(`  Just "y" or "n" please (enter = ${def ? 'yes' : 'no'}). You typed "${raw.trim()}".`));
+  }
+  return def;
+}
+
 export interface Reader {
   ask: Ask;
   close: () => void;

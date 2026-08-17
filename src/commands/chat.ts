@@ -12,7 +12,7 @@ import { login } from './login';
 import { init } from './init';
 import { ensureTrusted, workspace } from '../workspace';
 import { findOutsidePaths, resolveGrantDir, claudeAccessArgs } from '../access';
-import { c, createReader, createStatusBar, bar } from '../ui';
+import { c, createReader, createStatusBar, bar, askYesNo } from '../ui';
 
 /**
  * A one-line status bar: brain, the recent-replay window as a count, and the
@@ -92,9 +92,9 @@ export async function chat(): Promise<void> {
 
   let cfg = loadConfig();
   if (!cfg || !cfg.defaultBrain) {
-    const a = ((await ask(c.dim('No Holt setup in this folder. Set it up now? [Y/n] '))) ?? '').trim().toLowerCase();
+    const setupYes = await askYesNo(ask, c.dim('No Holt setup in this folder. Set it up now? [Y/n] '), true);
     close();
-    if (a === 'n' || a === 'no') { console.log(c.dim('  Run "holt init" here when ready.\n')); return; }
+    if (!setupYes) { console.log(c.dim('  Run "holt init" here when ready.\n')); return; }
     await init();
     console.log(c.dim('\nSetup done. Run "holt chat" to start talking.\n'));
     return;
@@ -315,8 +315,7 @@ export async function chat(): Promise<void> {
       const outside = findOutsidePaths(line, workspace());
       for (const dir of outside) {
         if (grantedDirs.has(dir)) continue; // already granted this session; no re-prompt
-        const ans = ((await ask(c.dim(`  Allow this session to access ${dir} (outside this folder)? [y/N] `))) ?? '').trim().toLowerCase();
-        if (ans === 'y' || ans === 'yes') {
+        if (await askYesNo(ask, c.dim(`  Allow this session to access ${dir} (outside this folder)? [y/N] `), false)) {
           grantedDirs.add(dir);
           console.log(c.green(`  granted this session: ${dir}`));
         } else {

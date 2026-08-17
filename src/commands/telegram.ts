@@ -7,7 +7,7 @@
  * The bot is single user: only the allowed chat id is served. Incoming text is
  * run through the selected brain (runTask); the reply is sent back to Telegram.
  */
-import { createReader, c, type Ask } from '../ui';
+import { createReader, c, askYesNo, type Ask } from '../ui';
 import { isTrusted, trustDir, workspace } from '../workspace';
 import { runTask } from '../runner';
 import {
@@ -56,12 +56,10 @@ export async function setupTelegram(ask: Ask): Promise<boolean> {
   console.log(c.dim('            then I will auto-detect the chat id.'));
   console.log(c.dim('  Option B: paste a numeric chat id yourself.'));
 
-  const mode = ((await ask('\n  Auto-detect from a message you just sent? [Y/n] ')) ?? '')
-    .trim()
-    .toLowerCase();
+  const autoDetect = await askYesNo(ask, '\n  Auto-detect from a message you just sent? [Y/n] ', true);
 
   let allowedChatId: number | null = null;
-  if (mode === '' || mode === 'y' || mode === 'yes') {
+  if (autoDetect) {
     // Poll with the not-yet-saved token directly, so a failed setup never
     // leaves a bogus config behind (and never clobbers an existing one).
     console.log(c.dim('\n  Checking for a recent message...'));

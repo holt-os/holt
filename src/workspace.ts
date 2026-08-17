@@ -6,7 +6,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { c, type Ask } from './ui';
+import { c, askYesNo, type Ask } from './ui';
 
 export const GLOBAL_DIR = join(homedir(), '.holt');
 export const TRUST_PATH = join(GLOBAL_DIR, 'trust.json');
@@ -50,8 +50,7 @@ export async function ensureTrusted(ask: Ask): Promise<boolean> {
   console.log('\n' + c.accent('Trust this folder?'));
   console.log('  ' + ws);
   console.log(c.dim('  Holt will read and write here: its config, memory, and any files you ask a brain to touch.'));
-  const ans = ((await ask('  Trust and continue? [y/N] ')) ?? '').trim().toLowerCase();
-  if (ans === 'y' || ans === 'yes') {
+  if (await askYesNo(ask, '  Trust and continue? [y/N] ', false)) {
     trustDir(ws);
     console.log(c.green('  Trusted.') + c.dim(' (remembered for next time)') + '\n');
     return true;

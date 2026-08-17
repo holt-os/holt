@@ -8,7 +8,7 @@ import { loadTelegramConfig } from '../telegram';
 import { connectApiBrain } from './setting';
 import { setupTelegram } from './telegram';
 import { voiceInterview } from './voice';
-import { c, createReader } from '../ui';
+import { c, createReader, askYesNo } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
   const s = raw.trim().toLowerCase();
@@ -44,14 +44,12 @@ export async function init(): Promise<void> {
   const toInstall = chosen.filter((id) => !isInstalled(BRAIN_DEFS[id].command));
   const loginWanted = new Set<BrainId>();
   for (const id of toInstall) {
-    const a = ((await ask(`  ${BRAIN_DEFS[id].label} is not installed. Sign in after install? [Y/n] `)) ?? '').trim().toLowerCase();
-    if (a !== 'n' && a !== 'no') loginWanted.add(id);
+    if (await askYesNo(ask, `  ${BRAIN_DEFS[id].label} is not installed. Sign in after install? [Y/n] `, true)) loginWanted.add(id);
   }
 
   // Optional: connect a direct API brain (raw key, no CLI needed).
   const connectedApiBrains: ApiBrain[] = [];
-  const apiAns = ((await ask('\nAlso connect a direct API brain (raw key, no CLI needed)? [y/N] ')) ?? '').trim().toLowerCase();
-  if (apiAns === 'y' || apiAns === 'yes') {
+  if (await askYesNo(ask, '\nAlso connect a direct API brain (raw key, no CLI needed)? [y/N] ', false)) {
     const holder = defaultConfig();
     const brain = await connectApiBrain(ask, holder);
     if (brain) connectedApiBrains.push(brain);
@@ -85,15 +83,13 @@ export async function init(): Promise<void> {
     const q = ollamaHere
       ? `Semantic memory needs a local embed model. Pull ${EMBED_MODEL} with Ollama now? [Y/n] `
       : 'Enable private semantic memory? Installs Ollama plus a small local embed model. Everything stays on your machine. [Y/n] ';
-    const a = ((await ask('\n' + q)) ?? '').trim().toLowerCase();
-    wantMemorySetup = a !== 'n' && a !== 'no';
+    wantMemorySetup = await askYesNo(ask, '\n' + q, true);
     if (!wantMemorySetup) console.log(c.dim('  Okay. Memory still works with keyword recall; run "holt init" again anytime.'));
   }
 
   // Optional: connect Telegram to chat with Holt from your phone.
   if (!loadTelegramConfig()) {
-    const tgAns = ((await ask('\nChat with Holt from your phone over Telegram? [y/N] ')) ?? '').trim().toLowerCase();
-    if (tgAns === 'y' || tgAns === 'yes') await setupTelegram(ask);
+    if (await askYesNo(ask, '\nChat with Holt from your phone over Telegram? [y/N] ', false)) await setupTelegram(ask);
   }
 
   close(); // release stdin before running interactive installs/logins
@@ -169,9 +165,9 @@ export async function init(): Promise<void> {
   // Optional: teach Holt how you write, so it can draft in your voice. Additive
   // and opt-in. A fresh reader since the setup reader was closed for installs.
   const voiceReader = createReader();
-  const voiceAns = ((await voiceReader.ask('Want Holt to learn how you write, so it can draft in your voice? [y/N] ')) ?? '').trim().toLowerCase();
+  const voiceYes = await askYesNo(voiceReader.ask, 'Want Holt to learn how you write, so it can draft in your voice? [y/N] ', false);
   voiceReader.close();
-  if (voiceAns === 'y' || voiceAns === 'yes') {
+  if (voiceYes) {
     await voiceInterview();
   } else {
     console.log(c.dim('  Skipped. Run "holt voice" anytime to set up your writing voice.\n'));

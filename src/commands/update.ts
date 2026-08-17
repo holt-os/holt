@@ -6,7 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { VERSION } from '../version';
-import { c, createReader } from '../ui';
+import { c, createReader, askYesNo } from '../ui';
 
 async function latestVersion(): Promise<string | null> {
   try {
@@ -47,8 +47,7 @@ export async function update(): Promise<void> {
     console.log(`  Newer version available: ${c.bold(latest)}`);
 
     if (isBrewInstall()) {
-      const a = ((await ask('  Update now via Homebrew? [Y/n] ')) ?? '').trim().toLowerCase();
-      if (a === 'n' || a === 'no') {
+      if (!(await askYesNo(ask, '  Update now via Homebrew? [Y/n] ', true))) {
         console.log(c.dim('  Later, then. The command is: brew upgrade holt\n'));
         return;
       }
@@ -58,8 +57,7 @@ export async function update(): Promise<void> {
       return;
     }
 
-    const a = ((await ask('  Update now? [Y/n] ')) ?? '').trim().toLowerCase();
-    if (a === 'n' || a === 'no') {
+    if (!(await askYesNo(ask, '  Update now? [Y/n] ', true))) {
       console.log(c.dim('  Later, then. The command is: npm install -g @holt-os/holt\n'));
       return;
     }

@@ -14,7 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { c, createReader, type Ask } from '../ui';
+import { c, createReader, askYesNo, type Ask } from '../ui';
 import {
   loadVoice,
   saveVoice,
@@ -97,8 +97,7 @@ async function runQuestions(ask: Ask, depth: 'quick' | 'detailed'): Promise<Inte
 
 /** Ask whether to keep an excerpt of a sample (consent). Defaults to no. */
 async function askKeepExcerpt(ask: Ask): Promise<boolean> {
-  const a = ((await ask('  Store a short excerpt so Holt can match your tone directly? [y/N] ')) ?? '').trim().toLowerCase();
-  return a === 'y' || a === 'yes';
+  return askYesNo(ask, '  Store a short excerpt so Holt can match your tone directly? [y/N] ', false);
 }
 
 /** Ingest a file into the profile as a sample. Returns updated profile or null. */
