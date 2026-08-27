@@ -1,6 +1,6 @@
 /**
  * `holt hook`: ambient per-folder memory for Claude Code. Two directions, both
- * wired as Claude Code hooks so they run with no `holt chat` and no manual tool
+ * wired as Claude Code hooks so they run with no Holt REPL and no manual tool
  * call:
  *
  *   inject  (UserPromptSubmit) - before each prompt, recall the most relevant

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
+import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, loginUnavailable, PROVIDER_ENV, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
 import { isInstalled, renderPrompt, runBrain, looksLikeAuthError, MAX_REPLAY_TURNS, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
 import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
@@ -84,7 +84,8 @@ function resolveActive(cfg: HoltConfig, id: string): Active | null {
   return null;
 }
 
-/** `holt chat`: interactive session with persistent memory and brain switching. */
+/** Holt's built-in REPL: persistent memory and brain switching. Reached by
+ * bare `holt` when the folder's default is an API brain. */
 export async function chat(): Promise<void> {
   const { ask, close } = createReader();
 
@@ -96,7 +97,7 @@ export async function chat(): Promise<void> {
     close();
     if (!setupYes) { console.log(c.dim('  Run "holt init" here when ready.\n')); return; }
     await init();
-    console.log(c.dim('\nSetup done. Run "holt chat" to start talking.\n'));
+    console.log(c.dim('\nSetup done. Run "holt" to start talking.\n'));
     return;
   }
 
@@ -113,7 +114,7 @@ export async function chat(): Promise<void> {
   let lastReply = '';
 
   // In-memory, session-scoped grants for reading folders OUTSIDE this workspace.
-  // Never persisted; resets on the next `holt chat`. Default deny (empty).
+  // Never persisted; resets on the next session. Default deny (empty).
   const grantedDirs = new Set<string>();
 
   // Sticky bottom status bar on a TTY; a printed line per reply otherwise. The
@@ -232,7 +233,11 @@ export async function chat(): Promise<void> {
         sb.detach();
         close();
         await login(targetId);
-        console.log(c.dim('\n  Signed in. Run "holt chat" again to continue.\n'));
+        // login() routes a retired sign-in to the API-key flow instead, which
+        // ends with its own instructions, so do not claim a sign-in happened.
+        console.log(c.dim(loginUnavailable(targetId)
+          ? '\n  Run "holt" again to continue.\n'
+          : '\n  Signed in. Run "holt" again to continue.\n'));
         return;
       }
 
@@ -362,9 +367,12 @@ export async function chat(): Promise<void> {
     // BEFORE the ok/not-ok split so both cases are handled: print Holt's own hint
     // and skip storing entirely, so nothing lands in memory and there is no loop.
     if (looksLikeAuthError(res.text)) {
-      const hint = active.kind === 'cli'
-        ? `  ${active.label} looks signed out. Run "holt login ${active.id}" in a terminal, or type /login here.`
-        : `  ${active.label} has no working key. Run "holt setting" to add or fix it.`;
+      const goneLogin = active.kind === 'cli' ? loginUnavailable(active.id) : null;
+      const hint = goneLogin
+        ? `  ${active.label} has no sign-in any more and no ${PROVIDER_ENV[goneLogin.provider]} to fall back on. Get a key at ${goneLogin.keyUrl}, then run "holt setting" to connect it.`
+        : active.kind === 'cli'
+          ? `  ${active.label} looks signed out. Run "holt login ${active.id}" in a terminal, or type /login here.`
+          : `  ${active.label} has no working key. Run "holt setting" to add or fix it.`;
       if (!streamed || !res.text.endsWith('\n')) console.log('');
       console.log(c.red(hint) + '\n');
       showStatus();

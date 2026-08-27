@@ -1,5 +1,5 @@
 /**
- * Custom launch command (e.g. `ai` -> holt chat).
+ * Custom launch command (e.g. `ai` -> holt).
  *
  * Preferred mechanism: write a tiny executable launcher into the same bin
  * directory that `holt` itself runs from. That directory is on PATH already,

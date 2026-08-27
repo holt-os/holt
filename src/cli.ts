@@ -68,12 +68,12 @@ From your phone, while you sleep:
 
 Housekeeping:
   setting         Change brains, API connections, and your launch word (per folder)
-  login <brain>   Sign in to a brain: claude, codex, or gemini
+  login <brain>   Sign in to a brain: claude or codex
+                  (Gemini has no sign-in left; it routes you to an API key)
   update          Get the latest Holt, in one word
   reset           Start this folder over (asks first; your own files are untouched)
   hook            Ambient memory inside plain Claude Code: holt hook [install | status]
   mcp             Share Holt's memory with other AI apps (Claude Code, Cursor, Codex)
-  chat            Lightweight built-in chat, used for API brains
   init            Full setup by hand (bare "holt" runs this for you when needed)
   launch          Same as bare "holt": start your assistant
   version | help  Print the version / show this help
@@ -122,6 +122,8 @@ async function main(): Promise<void> {
     case 'init':
       await init();
       break;
+    // Undocumented: bare `holt` reaches the REPL by itself for API brains.
+    // Kept as a working alias so older scripts and aliases do not break.
     case 'chat':
       await chat();
       break;

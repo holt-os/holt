@@ -18,7 +18,7 @@ import {
   EMBED_MODEL,
 } from '../memory';
 import { loadTelegramConfig } from '../telegram';
-import { loadConfig, lastConfigRepair, BRAIN_DEFS, BRAIN_IDS } from '../config';
+import { loadConfig, lastConfigRepair, BRAIN_DEFS, BRAIN_IDS, loginUnavailable, cliBrainUsable } from '../config';
 import { wsHoltDir } from '../workspace';
 import { c } from '../ui';
 
@@ -133,8 +133,16 @@ export async function doctor(args: string[] = []): Promise<void> {
   for (const id of BRAIN_IDS) {
     const def = BRAIN_DEFS[id];
     const here = isInstalled(def.command);
-    if (here) installed.push(def.label);
+    // Installed is not the same as usable: a brain whose sign-in was retired
+    // needs a provider key, so do not recommend it as if it were ready.
+    const gone = loginUnavailable(id);
+    const usable = cliBrainUsable(id);
+    if (here && usable) installed.push(def.label);
     console.log(`  ${here ? c.green('installed') : c.dim('missing  ')}  ${def.label} ${c.dim(`(${def.command})`)}`);
+    if (here && gone && !usable) {
+      warn(`${def.label} cannot sign in any more. ${gone.reason}`);
+      steps.push(`Get a ${gone.provider} key at ${gone.keyUrl}, then connect it: holt setting -> "c".`);
+    }
   }
   // A configured folder may already point at an API brain; mention it if so.
   const cfg = loadConfig();
@@ -231,7 +239,7 @@ export async function doctor(args: string[] = []): Promise<void> {
     steps.unshift('Set up this folder: run "holt init".');
   }
   if (steps.length === 0) {
-    good('You are in good shape. Run "holt chat" to start.');
+    good('You are in good shape. Run "holt" to start.');
   } else {
     let n = 1;
     for (const s of steps) console.log(`  ${c.accent(String(n++) + '.')} ${s}`);

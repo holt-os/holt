@@ -5,7 +5,7 @@
  * cwd). If the user references an absolute path that exists but lives outside the
  * workspace, Holt asks once, per session, before granting the containing DIRECTORY
  * read access to the brain. Grants are in-memory only (a Set on the chat session),
- * never persisted, and reset on the next `holt chat`. Default deny, read-oriented.
+ * never persisted, and reset on the next session. Default deny, read-oriented.
  */
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';

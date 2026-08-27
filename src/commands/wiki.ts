@@ -334,7 +334,7 @@ async function statusCmd(cfg: HoltConfig): Promise<void> {
 /**
  * `holt wiki auto [on|off]`: toggle wiki.autoSync in the folder config. With no
  * argument it reports the current state. When on, the wiki syncs automatically
- * at the end of a `holt chat` session and when the Claude Code Stop hook fires.
+ * at the end of a REPL session and when the Claude Code Stop hook fires.
  */
 function autoCmd(cfg: HoltConfig, arg: string): void {
   const want = (arg || '').toLowerCase();

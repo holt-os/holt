@@ -9,6 +9,8 @@ import {
   findApiBrain,
   resolveApiKey,
   saveCredential,
+  loginUnavailable,
+  cliBrainUsable,
   type HoltConfig,
   type BrainId,
   type Provider,
@@ -28,6 +30,9 @@ function printStatus(cfg: HoltConfig): void {
     const tags = [
       b.enabled ? c.green('enabled') : (isInstalled(b.command) ? c.dim('installed, off') : c.dim('not installed')),
       cfg.defaultBrain === id ? c.accent('default') : '',
+      // A retired sign-in with no key in the environment is the real reason a
+      // brain will not answer, so name it here rather than at first failure.
+      loginUnavailable(id) && !cliBrainUsable(id) ? c.red('no sign-in, needs API key') : '',
     ].filter(Boolean).join('  ');
     console.log(`  ${id.padEnd(10)} ${b.label.padEnd(16)} ${tags}`);
   }
@@ -51,11 +56,15 @@ function printStatus(cfg: HoltConfig): void {
  * Shared connect-an-API-brain flow. Prompts for provider, model, id, and key
  * (paste stored 0o600, or an env var name). Mutates and returns cfg. Reused by
  * init so both entry points behave identically. Returns null if cancelled.
+ *
+ * `preset` skips the provider question, for callers that already know it (e.g.
+ * the Gemini dead-sign-in path, which only exists to get a Gemini key in).
  */
-export async function connectApiBrain(ask: Ask, cfg: HoltConfig): Promise<ApiBrain | null> {
+export async function connectApiBrain(ask: Ask, cfg: HoltConfig, preset?: Provider): Promise<ApiBrain | null> {
   // Re-ask on bad input instead of silently cancelling; enter picks the first
   // provider, "skip" backs out on purpose.
-  let provider: Provider | null = null;
+  let provider: Provider | null = preset ?? null;
+  if (provider) console.log(c.dim(`  provider: ${provider}`));
   for (let tries = 0; tries < 3 && !provider; tries++) {
     const provRaw = ((await ask(`  provider [${PROVIDERS.join('/')}] (enter for ${PROVIDERS[0]}, or "skip"): `)) ?? 'skip')
       .trim()
@@ -77,7 +86,13 @@ export async function connectApiBrain(ask: Ask, cfg: HoltConfig): Promise<ApiBra
   const modelRaw = ((await ask(`  model (enter for ${suggestion}): `)) ?? '').trim();
   const model = modelRaw || suggestion;
 
-  const idRaw = ((await ask('  short name for this brain (e.g. sonnet): ')) ?? '').trim();
+  // A preset provider means the caller pushed the user here; give the brain a
+  // usable name on enter rather than making them invent one to finish.
+  const idHint = preset ? `${preset}-api` : '';
+  const idPrompt = idHint
+    ? `  short name for this brain (enter for ${idHint}): `
+    : '  short name for this brain (e.g. sonnet): ';
+  const idRaw = (((await ask(idPrompt)) ?? '').trim()) || idHint;
   if (!idRaw) {
     console.log(c.dim('  cancelled (no name).'));
     return null;
@@ -138,8 +153,13 @@ export async function runSettings(ask: Ask): Promise<HoltConfig> {
     } else if (choice === 't') {
       const pick = ((await ask(`  toggle which brain [${BRAIN_IDS.join('/')}]: `)) ?? '').trim() as BrainId;
       if (BRAIN_IDS.includes(pick)) {
+        const goneLogin = loginUnavailable(pick);
         if (!cfg.brains[pick].enabled && !isInstalled(cfg.brains[pick].command)) {
           console.log(c.dim(`  ${cfg.brains[pick].label} is not installed. Run "holt init" to install it.`));
+        } else if (!cfg.brains[pick].enabled && goneLogin && !cliBrainUsable(pick)) {
+          // Turning it on would only produce an auth failure on the first message.
+          console.log(c.dim(`  ${cfg.brains[pick].label} has no sign-in any more and no ${goneLogin.provider.toUpperCase()}_API_KEY set.`));
+          console.log(c.dim(`  Get a key at ${goneLogin.keyUrl}, then connect it here with "c".`));
         } else {
           cfg.brains[pick].enabled = !cfg.brains[pick].enabled;
           if (!cfg.brains[pick].enabled && cfg.defaultBrain === pick) cfg.defaultBrain = selectableIds(cfg)[0] ?? null;

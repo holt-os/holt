@@ -121,11 +121,11 @@ The mode is chosen per turn automatically: semantic where a vector exists, keywo
 
 ## Launch alias
 
-`holt init` and `holt setting` can install a short launch word (like `ai`) that runs `holt chat`. `src/alias.ts` writes a fenced block into your shell rc:
+`holt init` and `holt setting` can install a short launch word (like `ai`) that runs `holt`. `src/alias.ts` writes a fenced block into your shell rc:
 
 ```
 # >>> holt launch alias >>>
-alias ai="holt chat"
+alias ai="holt"
 # <<< holt launch alias <<<
 ```
 

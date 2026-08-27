@@ -104,7 +104,7 @@ export async function graph(args: string[] = []): Promise<void> {
   }
 
   if (turns.length === 0 && wikiPages.length === 0 && !codeGraph) {
-    console.log(c.dim('\n  No memory in this folder yet. Have a chat first with "holt chat", then come back.\n'));
+    console.log(c.dim('\n  No memory in this folder yet. Talk to Holt here first with "holt", then come back.\n'));
     console.log(c.dim('  Or ingest this folder\'s code/docs: "holt graph --code" / "holt graph --docs".\n'));
     return;
   }

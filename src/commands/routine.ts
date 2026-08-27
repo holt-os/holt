@@ -335,7 +335,7 @@ async function runCmd(rest: string[]): Promise<void> {
       close();
       if (!ok) return;
     } else {
-      process.stderr.write('This folder is not trusted. Run holt init or holt chat here once, then run the routine.\n');
+      process.stderr.write('This folder is not trusted. Run holt init here once, then run the routine.\n');
       process.exitCode = 1;
       return;
     }

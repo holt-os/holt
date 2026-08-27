@@ -1,4 +1,4 @@
-import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, type BrainId, type ApiBrain } from '../config';
+import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, loginUnavailable, cliBrainUsable, type BrainId, type ApiBrain } from '../config';
 import { isInstalled } from '../brains';
 import { installAlias } from '../alias';
 import { runInteractive } from '../install';
@@ -8,6 +8,7 @@ import { loadTelegramConfig } from '../telegram';
 import { connectApiBrain } from './setting';
 import { setupTelegram } from './telegram';
 import { voiceInterview } from './voice';
+import { printLoginUnavailable } from './login';
 import { c, createReader, askYesNo } from '../ui';
 
 function parseBrains(raw: string, found: BrainId[]): BrainId[] {
@@ -30,7 +31,9 @@ export async function init(): Promise<void> {
   const found: BrainId[] = [];
   for (const id of BRAIN_IDS) {
     const ok = isInstalled(BRAIN_DEFS[id].command);
-    console.log(`  ${ok ? c.green('found  ') : c.dim('missing')}  ${BRAIN_DEFS[id].label} (${BRAIN_DEFS[id].command})`);
+    // Flag a retired sign-in at the point of choosing, not three prompts later.
+    const note = loginUnavailable(id) && !cliBrainUsable(id) ? c.dim('  (needs an API key, no sign-in)') : '';
+    console.log(`  ${ok ? c.green('found  ') : c.dim('missing')}  ${BRAIN_DEFS[id].label} (${BRAIN_DEFS[id].command})${note}`);
     if (ok) found.push(id);
   }
   console.log('');
@@ -44,13 +47,32 @@ export async function init(): Promise<void> {
   const toInstall = chosen.filter((id) => !isInstalled(BRAIN_DEFS[id].command));
   const loginWanted = new Set<BrainId>();
   for (const id of toInstall) {
+    // A brain with no interactive sign-in left is handled below instead; asking
+    // "sign in after install?" here would promise something that cannot happen.
+    if (loginUnavailable(id)) continue;
     if (await askYesNo(ask, `  ${BRAIN_DEFS[id].label} is not installed. Sign in after install? [Y/n] `, true)) loginWanted.add(id);
   }
 
-  // Optional: connect a direct API brain (raw key, no CLI needed).
   const connectedApiBrains: ApiBrain[] = [];
+  const holder = defaultConfig();
+
+  // Brains whose sign-in Google/OpenAI/etc have retired. Say so once, here,
+  // whether or not the CLI is installed, and offer the key route in its place.
+  // Someone who already exports the provider key is fine and gets left alone.
+  for (const id of chosen) {
+    const gone = loginUnavailable(id);
+    if (!gone || cliBrainUsable(id)) continue;
+    printLoginUnavailable(id, gone);
+    if (await askYesNo(ask, `\n  Connect ${BRAIN_DEFS[id].label} with an API key now? [Y/n] `, true)) {
+      const brain = await connectApiBrain(ask, holder, gone.provider);
+      if (brain) connectedApiBrains.push(brain);
+    } else {
+      console.log(c.dim('  Okay. Run "holt setting" then "c" whenever you have the key.'));
+    }
+  }
+
+  // Optional: connect a direct API brain (raw key, no CLI needed).
   if (await askYesNo(ask, '\nAlso connect a direct API brain (raw key, no CLI needed)? [y/N] ', false)) {
-    const holder = defaultConfig();
     const brain = await connectApiBrain(ask, holder);
     if (brain) connectedApiBrains.push(brain);
   }
@@ -137,7 +159,7 @@ export async function init(): Promise<void> {
 
   // Write per-workspace config.
   const cfg = loadConfig() ?? defaultConfig();
-  for (const id of BRAIN_IDS) cfg.brains[id].enabled = chosen.includes(id) && isInstalled(BRAIN_DEFS[id].command);
+  for (const id of BRAIN_IDS) cfg.brains[id].enabled = chosen.includes(id) && isInstalled(BRAIN_DEFS[id].command) && cliBrainUsable(id);
   for (const b of connectedApiBrains) if (!cfg.apiBrains.some((a) => a.id === b.id)) cfg.apiBrains.push(b);
   cfg.defaultBrain = cfg.brains[defaultBrain].enabled
     ? defaultBrain
@@ -154,9 +176,9 @@ export async function init(): Promise<void> {
       console.log('\nStart chatting:');
       console.log('  ' + c.accent(`source ${aliasNeedsSource}`) + c.dim('   (once; new terminals will not need it)'));
       console.log('  ' + c.accent(aliasAns) + '\n');
-      console.log(c.dim('  Or right now, without sourcing: holt chat\n'));
+      console.log(c.dim('  Or right now, without sourcing: holt\n'));
     } else {
-      console.log('Start chatting:  ' + c.accent('holt chat') + '\n');
+      console.log('Start chatting:  ' + c.accent('holt') + '\n');
     }
   } else {
     console.log(c.dim('No brain is ready yet. Install one, then run "holt init" again.\n'));

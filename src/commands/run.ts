@@ -70,7 +70,7 @@ export async function run(args: string[]): Promise<void> {
       close();
       if (!ok) return;
     } else {
-      process.stderr.write('This folder is not trusted. Run holt init or holt chat here once, then schedule/run.\n');
+      process.stderr.write('This folder is not trusted. Run holt init here once, then schedule/run.\n');
       process.exitCode = 1;
       return;
     }

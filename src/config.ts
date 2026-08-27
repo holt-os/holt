@@ -98,15 +98,50 @@ export const BRAIN_SETUP: Record<BrainId, { install: string[]; login: string[] }
   gemini: { install: ['npm', 'install', '-g', '@google/gemini-cli'], login: ['gemini'] },
 };
 
+/**
+ * Brains whose interactive sign-in no longer exists, so handing the user to the
+ * CLI's own login would only show them a dead end. Google ended "Login with
+ * Google" for Gemini Code Assist individual accounts (free tier, AI Pro, AI
+ * Ultra) on 18 June 2026 and pointed those users at Antigravity. Gemini CLI
+ * itself still runs, but only on an API key, so we route people to the key.
+ */
+export interface LoginUnavailable {
+  reason: string;
+  /** Provider to pre-select when offering the API-brain route. */
+  provider: Provider;
+  /** Where to get a key. */
+  keyUrl: string;
+}
+
+export const BRAIN_LOGIN_UNAVAILABLE: Partial<Record<BrainId, LoginUnavailable>> = {
+  gemini: {
+    reason:
+      'Google ended "Login with Google" for Gemini Code Assist individual accounts on 18 June 2026. Personal Google accounts (free, AI Pro, AI Ultra) can no longer sign in to Gemini CLI.',
+    provider: 'gemini',
+    keyUrl: 'https://aistudio.google.com/apikey',
+  },
+};
+
+/** The dead-sign-in record for a brain, or null when its login still works. */
+export function loginUnavailable(id: BrainId): LoginUnavailable | null {
+  return BRAIN_LOGIN_UNAVAILABLE[id] ?? null;
+}
+
 export const BRAIN_IDS: BrainId[] = ['claude', 'codex', 'gemini'];
 
 export const PROVIDERS: Provider[] = ['anthropic', 'openai', 'gemini', 'kimi', 'grok'];
 
-/** Suggested default model per provider (user may type anything). */
+/**
+ * Suggested default model per provider (user may type anything). Prefer a
+ * floating alias where the provider publishes one: a pinned version eventually
+ * gets retired and every new user hits a 404 on their first message, which is
+ * exactly what `gemini-2.5-flash` did once Google stopped serving it to new
+ * accounts.
+ */
 export const PROVIDER_MODEL_SUGGESTION: Record<Provider, string> = {
-  anthropic: 'claude-sonnet-4-6',
+  anthropic: 'claude-sonnet-5',
   openai: 'gpt-5',
-  gemini: 'gemini-2.5-flash',
+  gemini: 'gemini-flash-latest',
   kimi: 'kimi-k2-turbo-preview',
   grok: 'grok-4',
 };
@@ -119,6 +154,18 @@ export const PROVIDER_ENV: Record<Provider, string> = {
   kimi: 'MOONSHOT_API_KEY',
   grok: 'XAI_API_KEY',
 };
+
+/**
+ * Whether a CLI brain can actually answer a message. A brain whose interactive
+ * sign-in is gone only runs on a provider key in the environment, so a keyless
+ * one counts as unusable, which beats enabling a brain that fails on the first
+ * prompt. Enterprise/licensed setups that export the key keep working.
+ */
+export function cliBrainUsable(id: BrainId): boolean {
+  const gone = loginUnavailable(id);
+  if (!gone) return true;
+  return Boolean(process.env[PROVIDER_ENV[gone.provider]]);
+}
 
 export function defaultConfig(): HoltConfig {
   const brains = {} as Record<BrainId, BrainConfig>;

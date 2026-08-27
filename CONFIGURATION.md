@@ -43,7 +43,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 ```
 
 - `version` (number): config schema version. Currently `5`. Holt fills in missing fields from defaults when it loads an older file, so upgrading is lossless: a v4 file (no `wiki` block) loads as v5 with the wiki defaults filled in and every existing field preserved.
-- `defaultBrain` (string | `null`): the brain a new `holt chat` starts with: a CLI brain id (`claude`/`codex`/`gemini`) or the short name of an API brain. `null` means no brain is ready.
+- `defaultBrain` (string | `null`): the brain a new Holt session starts with: a CLI brain id (`claude`/`codex`/`gemini`) or the short name of an API brain. `null` means no brain is ready.
 - `brains` (map): one entry per known brain.
   - `id`: the brain key, same as the map key.
   - `label`: display name shown in the UI.
@@ -57,7 +57,7 @@ Written by `holt init` in the folder you ran it from. It records which brains ar
 - `wiki` (object): the derived knowledge wiki (see `holt wiki`).
   - `maintainer` (`"brain"` | `"local"`, default `"brain"`): who synthesizes and merges pages. `brain` uses the folder's configured brain (rides your Claude plan when the brain is the Claude CLI, so no marginal cost). `local` uses a local Ollama generative model, which is free and offline but lower quality (it trades dollars for RAM).
   - `localModel` (string, default `"qwen2.5:7b"`): the Ollama generative model used when `maintainer` is `"local"`. This is a text model, distinct from the embed model (`nomic-embed-text`) used for routing and recall. If it is not pulled, `holt wiki` prints the `ollama pull` line and falls back to the brain. `holt wiki setup` recommends a model for your RAM.
-  - `autoSync` (boolean, optional, default off): when `true`, the wiki keeps itself current with no manual `holt wiki sync`. After a `holt chat` session ends, Holt distills facts and then folds them into pages automatically; the Claude Code Stop hook (`holt hook capture`) does the same ambiently, so facts captured with no chat still reach the wiki. Auto-sync is silent, best-effort, and never blocks exit, and it reuses the same engine as `holt wiki sync` (no behavior drift). Toggle it with `holt wiki auto on` / `holt wiki auto off` (which write this field); `holt wiki status` and `holt wiki auto` show the current state.
+  - `autoSync` (boolean, optional, default off): when `true`, the wiki keeps itself current with no manual `holt wiki sync`. After a Holt session ends, Holt distills facts and then folds them into pages automatically; the Claude Code Stop hook (`holt hook capture`) does the same ambiently, so facts captured with no chat still reach the wiki. Auto-sync is silent, best-effort, and never blocks exit, and it reuses the same engine as `holt wiki sync` (no behavior drift). Toggle it with `holt wiki auto on` / `holt wiki auto off` (which write this field); `holt wiki status` and `holt wiki auto` show the current state.
 
 To point a brain at a different CLI or add flags, edit `command` / `args`. See the echo-brain trick in `CONTRIBUTING.md` for a testing use of this.
 
@@ -67,7 +67,9 @@ Written only when you paste a raw key while connecting an API brain. One optiona
 
 **Damaged config.** If `.holt/config.json` ever becomes invalid JSON, Holt does not silently ignore your settings: it moves the damaged file aside as `config.json.broken-<timestamp>` (never deleted), tells you, and treats the folder as ready for a fresh setup. Your memory is untouched. `holt doctor --fix` reports the repair.
 
-**Signed-out brains.** A CLI brain (Claude Code, Codex, Gemini) that is logged out replies in its own prose (for example "Not logged in, please run /login" or "Invalid API key"), sometimes with a zero exit code. Holt recognizes that state, shows a hint pointing at `holt login <brain>` instead of relaying the text, and does not store the exchange (so `holt chat` cannot loop on it). To fix it: run `holt login <brain>` in a terminal, or type `/login` inside `holt chat` to hand off to the brain's own sign-in. For an API brain, add or fix its key with `holt setting` (or the env vars above).
+**Signed-out brains.** A CLI brain (Claude Code, Codex, Gemini) that is logged out replies in its own prose (for example "Not logged in, please run /login" or "Invalid API key"), sometimes with a zero exit code. Holt recognizes that state, shows a hint pointing at `holt login <brain>` instead of relaying the text, and does not store the exchange (so `holt` cannot loop on it). To fix it: run `holt login <brain>` in a terminal, or type `/login` inside a Holt session to hand off to the brain's own sign-in. For an API brain, add or fix its key with `holt setting` (or the env vars above).
+
+**Gemini has no sign-in.** Google ended "Login with Google" for Gemini Code Assist individual accounts (free tier, Google AI Pro, Google AI Ultra) on 18 June 2026 and pointed those users at Antigravity. Attempting it returns `This client is no longer supported for Gemini Code Assist for individuals`. The `gemini` CLI still runs, but only on an API key, so Holt never hands you to that dead sign-in: `holt login gemini` and `/login gemini` explain the situation and offer to connect Gemini as a direct API brain instead. Get a key at <https://aistudio.google.com/apikey>, then either export `GEMINI_API_KEY` (the `gemini` CLI reads it too, which keeps the CLI brain usable) or connect it with `holt setting` -> `c`. Without a key, `holt init`, `holt setting`, and `holt doctor` all report the Gemini CLI brain as unusable rather than enabling a brain that fails on its first message. Enterprise accounts with a Gemini Code Assist licence are unaffected.
 
 ## Writing voice profile: `~/.holt/voice.json`
 
@@ -134,9 +136,9 @@ Remove a path here to un-trust that folder; Holt will ask again next time you ru
 
 ### Reading files outside the trusted folder (session-only)
 
-A brain launched by `holt chat` is scoped to the folder you launched it from. If a message references an absolute path (`/...` or `~/...`) that exists **outside** that folder, Holt prompts once per new directory: `Allow this session to access <dir> (outside this folder)? [y/N]`. On `y`, the file's containing directory is granted read access for the rest of the chat; on `n`, the message still goes to the brain, just without that folder. Two chat commands manage this: `/allow <path>` grants a folder with no prompt, and `/allowed` lists the current grants.
+A brain launched by `holt` is scoped to the folder you launched it from. If a message references an absolute path (`/...` or `~/...`) that exists **outside** that folder, Holt prompts once per new directory: `Allow this session to access <dir> (outside this folder)? [y/N]`. On `y`, the file's containing directory is granted read access for the rest of the chat; on `n`, the message still goes to the brain, just without that folder. Two chat commands manage this: `/allow <path>` grants a folder with no prompt, and `/allowed` lists the current grants.
 
-These grants are **not configuration**: they live only in memory for the duration of the chat, are **never written to any file**, and reset the next time you run `holt chat` (default deny). They are also **read-oriented and Claude-Code-only**. When there are granted folders and the active brain is the Claude Code CLI (command `claude`), Holt appends these flags to the non-interactive invocation:
+These grants are **not configuration**: they live only in memory for the duration of the chat, are **never written to any file**, and reset the next time you run `holt` (default deny). They are also **read-oriented and Claude-Code-only**. When there are granted folders and the active brain is the Claude Code CLI (command `claude`), Holt appends these flags to the non-interactive invocation:
 
 - `--add-dir=<dir>` for each granted folder, so Claude Code's tools may reach paths outside the working directory;
 - `--allowedTools=Read,Glob,Grep` once, which pre-approves only the read tools so Claude Code does not need an interactive permission prompt (impossible in headless `claude -p` mode) and cannot write or run shell commands.
@@ -147,11 +149,11 @@ The `--flag=value` form is deliberate: `--add-dir` and `--allowedTools` are vari
 
 `holt mcp` runs Holt as an [MCP](https://modelcontextprotocol.io) server over stdio, so other tools (Claude Code, Cursor, Codex) can use this folder's memory. It exposes five tools: `recall`, `remember`, `list_skills`, `get_skill`, and `memory_stats`. Run `holt mcp setup` to print the client config snippets.
 
-The server operates on the folder its process starts in, exactly like `holt chat`. MCP is non-interactive (stdin carries the JSON-RPC protocol), so it cannot prompt for trust: it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. In server mode stdout is the protocol channel; any log line goes to stderr instead.
+The server operates on the folder its process starts in, exactly like `holt`. MCP is non-interactive (stdin carries the JSON-RPC protocol), so it cannot prompt for trust: it **auto-trusts the launch folder** and adds it to `~/.holt/trust.json`. In server mode stdout is the protocol channel; any log line goes to stderr instead.
 
 ## Ambient memory hooks: `holt hook`
 
-`holt hook install` wires Holt into Claude Code so per-folder memory works ambiently, with no `holt chat` and no manual tool call. It edits Claude Code's `settings.json` to register two [hooks](https://docs.claude.com/en/docs/claude-code/hooks):
+`holt hook install` wires Holt into Claude Code so per-folder memory works ambiently, with no Holt session open and no manual tool call. It edits Claude Code's `settings.json` to register two [hooks](https://docs.claude.com/en/docs/claude-code/hooks):
 
 - **inject** on the `UserPromptSubmit` event, running `holt hook inject`: before each prompt, recall the top notes for the current folder and print them so Claude Code adds them to context.
 - **capture** on the `Stop` event, running `holt hook capture`: when a session ends, distill durable facts from the transcript (via the folder's configured brain) and save them to the folder's memory.
@@ -164,7 +166,7 @@ Management commands:
 
 Install **merges** into any existing `hooks` config, is **idempotent** (re-running never duplicates an entry), and copies the file to `settings.json.holt-bak` before writing.
 
-**Trusted-folder guard.** The runtime bodies (`holt hook inject`, `holt hook capture`) are invoked by Claude Code, not you. They no-op **silently** in any folder that is not a trusted Holt workspace (`~/.holt/trust.json`) with an existing `.holt/memory`. Holt never injects private notes into unrelated projects and never creates memory in folders you did not set up. Run `holt init` (or `holt chat`) in a folder once to make it eligible. The inject hook writes **only** the context block to stdout (Claude Code injects it verbatim); all diagnostics go to stderr, and both hooks always exit 0. `capture` also respects the `memory.extractFacts` config flag and does nothing if no brain is configured. Uninstall with `holt hook remove`.
+**Trusted-folder guard.** The runtime bodies (`holt hook inject`, `holt hook capture`) are invoked by Claude Code, not you. They no-op **silently** in any folder that is not a trusted Holt workspace (`~/.holt/trust.json`) with an existing `.holt/memory`. Holt never injects private notes into unrelated projects and never creates memory in folders you did not set up. Run `holt init` in a folder once to make it eligible. The inject hook writes **only** the context block to stdout (Claude Code injects it verbatim); all diagnostics go to stderr, and both hooks always exit 0. `capture` also respects the `memory.extractFacts` config flag and does nothing if no brain is configured. Uninstall with `holt hook remove`.
 
 **Throttled re-distill.** Claude Code fires `Stop` after every assistant response, so `capture` is **throttled**: once a session passes the 3-exchange minimum it re-distills only when the session has gained a couple of new exchanges since the last capture (it skips with a `throttled` log line otherwise). Per-session progress lives in `~/.holt/hook-state.json` (`{ "<session_id>": { "lastExchanges": N } }`); a missing or corrupt file is treated as empty and never blocks capture. Sessions with no `session_id` are processed but not tracked.
 
@@ -297,7 +299,7 @@ The alias runs bare `holt` (your assistant), so your custom word starts the bran
 
 ## Bare `holt`: your assistant (launch)
 
-Bare `holt` (and its explicit alias `holt launch`) is the front door. It ensures the folder is set up (trust, a default brain, the memory dir, and the [ambient memory hooks](#ambient-memory-hooks-holt-hook)), then launches the **real interactive brain** in its own TUI, so you keep the brain's full agentic power. This is distinct from `holt chat`, the lightweight per-turn REPL. If the default brain is a direct API brain (no TUI), bare `holt` prints a note and falls back to `holt chat`.
+Bare `holt` (and its explicit alias `holt launch`) is the front door, and the only one users need. It ensures the folder is set up (trust, a default brain, the memory dir, and the [ambient memory hooks](#ambient-memory-hooks-holt-hook)), then launches the **real interactive brain** in its own TUI, so you keep the brain's full agentic power. If the default brain is a direct API brain (no TUI of its own), bare `holt` prints the same intro box and opens Holt's own per-turn REPL instead, with no separate command to type. That REPL is still reachable as the undocumented `holt chat` subcommand, so older aliases and scripts keep working.
 
 **Interactive invocation per brain** (the `INTERACTIVE_ARGS` map in `src/commands/launch.ts`), deliberately separate from the non-interactive `args` in `config.json` (which hold `-p` / `exec` for the REPL path):
 

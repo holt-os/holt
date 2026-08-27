@@ -2,7 +2,7 @@
  * `holt` (bare) / `holt launch`: launch the REAL interactive brain, branded as
  * Holt.
  *
- * Where `holt chat` is a thin REPL that shells out to a brain in non-interactive
+ * Where the built-in REPL is a thin loop that shells out to a brain in non-interactive
  * mode per turn (`claude -p`, `codex exec`, `gemini -p`), this command hands the
  * terminal to the brain's own INTERACTIVE session (`claude`, `codex`, `gemini`
  * with no `-p` and no prompt). That session keeps the brain's full agentic power
@@ -15,7 +15,8 @@
  *   1. ensureSetup(): trust the folder, run onboarding if there is no usable
  *      config/brain, ensure the memory dir exists, install the memory hooks.
  *   2. Resolve the active brain. An API brain has no interactive TUI, so we fall
- *      back to `chat()` with a one-line note.
+ *      to the built-in REPL, branded the same way. The user never types a
+ *      second command; `holt` is the only entry point.
  *   3. Brand: print the Holt banner, inject a "you are Holt" identity via the
  *      brain's system-prompt flag, set the project status line to "Holt".
  *   4. Launch interactively with runInteractive (stdio inherit). NO reader may be
@@ -26,7 +27,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { loadConfig, BRAIN_IDS, findApiBrain, type BrainId, type HoltConfig } from '../config';
+import { loadConfig, BRAIN_IDS, findApiBrain, loginUnavailable, cliBrainUsable, type BrainId, type HoltConfig } from '../config';
 import { isInstalled } from '../brains';
 import { runInteractive } from '../install';
 import { ensureTrusted, isTrusted, trustDir, workspace } from '../workspace';
@@ -270,13 +271,18 @@ function resolveTarget(cfg: HoltConfig): Target {
   if (!id) return null;
   if ((BRAIN_IDS as string[]).includes(id)) {
     const bid = id as BrainId;
-    return { kind: 'cli', id: bid, label: cfg.brains[bid].label };
+    // A brain whose interactive sign-in was retired cannot launch without a
+    // provider key. Fall through rather than dropping the user into a CLI that
+    // will only show them an auth dead end. Legacy configs written before the
+    // retirement still point here, so this is the common path for them.
+    if (cliBrainUsable(bid)) return { kind: 'cli', id: bid, label: cfg.brains[bid].label };
+  } else {
+    const api = findApiBrain(cfg, id);
+    if (api) return { kind: 'api', label: `${id} (api: ${api.provider}/${api.model})` };
   }
-  const api = findApiBrain(cfg, id);
-  if (api) return { kind: 'api', label: `${id} (api: ${api.provider}/${api.model})` };
-  // Default points at a CLI brain that is no longer enabled: fall back to any
-  // enabled CLI brain so we can still launch interactively.
-  const fallback = BRAIN_IDS.find((b) => cfg.brains[b].enabled);
+  // Default points at a CLI brain that is no longer enabled or usable: fall back
+  // to any enabled CLI brain so we can still launch interactively.
+  const fallback = BRAIN_IDS.find((b) => cfg.brains[b].enabled && cliBrainUsable(b));
   if (fallback) return { kind: 'cli', id: fallback, label: cfg.brains[fallback].label };
   return null;
 }
@@ -345,13 +351,28 @@ export async function launch(): Promise<void> {
   // ---- 2. Resolve the active brain -----------------------------------------
   const target = resolveTarget(cfg);
   if (!target) {
+    // Name the retired sign-in when that is what stranded them, so the fix is
+    // obvious instead of a generic "no brain ready".
+    const def = cfg.defaultBrain;
+    const gone = def && (BRAIN_IDS as string[]).includes(def) ? loginUnavailable(def as BrainId) : null;
+    if (gone) {
+      console.log('\n  ' + c.red(`${cfg.brains[def as BrainId].label} can no longer sign in.`));
+      console.log(c.dim('  ' + gone.reason));
+      console.log(c.dim(`  Get a key at ${gone.keyUrl}, then run "holt setting" and press "c" to connect it.`));
+      if (cfg.apiBrains.length) {
+        console.log(c.dim(`  Or switch this folder to an API brain you already have (${cfg.apiBrains.map((b) => b.id).join(', ')}): "holt setting" then "d".`));
+      }
+      console.log('');
+      return;
+    }
     console.log(c.dim('\n  No brain is ready. Run "holt setting" or "holt init".\n'));
     return;
   }
   if (target.kind === 'api') {
-    // API brains have no interactive TUI. Fall back to the thin REPL, which
-    // supports them, with a one-line note.
-    console.log(c.dim(`\n  launch needs a CLI brain; starting chat instead (default is ${target.label}).\n`));
+    // API brains have no interactive TUI of their own, so Holt runs its own
+    // REPL for them. Same intro box as the CLI path, so this reads as one
+    // product rather than a fallback to some other command.
+    console.log(renderIntroBox());
     await chat();
     return;
   }
