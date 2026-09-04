@@ -1,9 +1,12 @@
 /**
  * Scheduler: run Holt tasks on a timer, the OS-native way. On macOS we emit a
  * launchd plist and load it with launchctl; on Linux we append a line to the
- * user crontab. All entry generation is PURE (buildLaunchdPlist / buildCronLine)
- * so it can be tested without touching the real launchd or crontab. A tiny JSON
- * store at ~/.holt/schedules.json is the source of truth for what we installed.
+ * user crontab; on Windows we write a .cmd wrapper and register it with
+ * schtasks. All entry generation is PURE (buildLaunchdPlist / buildCronLine /
+ * buildWindowsScript / buildSchtasksArgs) so it can be tested without touching
+ * the real launchd, crontab, or Task Scheduler, which is what makes the Windows
+ * path testable from a Mac at all. A tiny JSON store at ~/.holt/schedules.json
+ * is the source of truth for what we installed.
  *
  * The scheduled job never imports the runner; it shells out to the `holt`
  * binary: `holt run "<task>" --quiet --out <log>` and optionally pipes the log
@@ -210,34 +213,58 @@ export function buildCronLine(job: Job, holtPath: string): string {
   return `${minute} ${hour} * * * ${command} # ${CRON_MARKER}${job.id}`;
 }
 
+// ---- Task Scheduler (Windows) ----
+
+/** The Task Scheduler entry name for a job. Also the handle used to delete it. */
+export function taskName(id: string): string {
+  return `Holt ${id}`;
+}
+
+/** Path of the .cmd wrapper a scheduled Windows job runs. */
+export function cmdScriptPath(id: string): string {
+  return join(GLOBAL_DIR, 'tasks', `${id}.cmd`);
+}
+
+/** Quote one argument for cmd.exe, which only understands double quotes. */
+export function cmdQuote(s: string): string {
+  return /[\s&()[\]{}^=;!'+,`~|<>"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 /**
- * PURE: the fields Windows Task Scheduler asks for, since Windows has no
- * crontab and printing a cron line there is worse than useless. Returned as
- * separate fields rather than one command string because Task Scheduler takes
- * them separately, which also sidesteps cmd quoting.
+ * PURE: the batch file a Windows scheduled job runs.
+ *
+ * Windows gets a wrapper file rather than a command crammed into schtasks /TR.
+ * /TR takes a single string and mangles embedded quotes, which breaks the
+ * moment a task phrase or a path under "Program Files" contains a space. A .cmd
+ * file has none of that problem and mirrors what launchd gets on macOS.
  */
-export function buildWindowsTaskFields(
-  job: Job,
-  holtPath: string,
-): { program: string; args: string; startIn: string; when: string; name: string } {
-  let args: string[];
+export function buildWindowsScript(job: Job, holtPath: string): string {
+  const holt = cmdQuote(holtPath);
+  const lines = ['@echo off', `cd /d ${cmdQuote(job.workspace)}`];
+
   if (job.runArgs && job.runArgs.length > 0) {
-    args = [...job.runArgs, '--quiet'];
+    lines.push(`${holt} ${job.runArgs.map(cmdQuote).join(' ')} --quiet`);
   } else {
-    args = ['run', job.task];
-    if (job.brain) args.push('--brain', job.brain);
-    args.push('--quiet', '--out', logPath(job.id));
+    const log = cmdQuote(logPath(job.id));
+    let run = `${holt} run ${cmdQuote(job.task)}`;
+    if (job.brain) run += ` --brain ${cmdQuote(job.brain)}`;
+    run += ` --quiet --out ${log}`;
+    lines.push(run);
+    if (job.notify) {
+      // Only notify when the run succeeded, matching the POSIX "&&" behaviour.
+      lines.push(`if errorlevel 1 exit /b 1`);
+      lines.push(`type ${log} | ${holt} notify`);
+    }
   }
-  // Anything with a space (a task phrase, a path under "Program Files") has to
-  // be quoted or Task Scheduler splits it into separate arguments.
-  const quoted = args.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a));
-  return {
-    program: holtPath,
-    args: quoted.join(' '),
-    startIn: job.workspace,
-    when: job.when,
-    name: `Holt ${job.id}`,
-  };
+  return lines.join('\r\n') + '\r\n';
+}
+
+/** PURE: the schtasks argv that registers a job's wrapper as a daily task. */
+export function buildSchtasksArgs(job: Job, scriptPath: string): string[] {
+  const { hour, minute } = parseWhen(job.when);
+  const hhmm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  // /F overwrites an existing task of the same name, so re-adding is clean.
+  return ['/Create', '/F', '/SC', 'DAILY', '/ST', hhmm, '/TN', taskName(job.id), '/TR', scriptPath];
 }
 
 /** PURE: remove any crontab lines tagged for this job id. */

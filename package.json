@@ -44,7 +44,7 @@
     "build": "tsup src/cli.ts --format esm --clean",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/specs.test.ts && tsx scripts/skillcompiler.test.ts",
+    "test": "tsx scripts/specs.test.ts && tsx scripts/skillcompiler.test.ts && tsx scripts/scheduler.test.ts",
     "release": "bash scripts/release.sh"
   },
   "devDependencies": {

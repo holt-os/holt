@@ -441,7 +441,7 @@ Options: `--brain <id>` pick a brain, `--out <file>` also write the reply to a f
 
 ### holt schedule
 
-Run a task automatically on a timer, using your OS scheduler (launchd on macOS, cron on Linux). A scheduled run behaves exactly like typing `holt run` in that folder.
+Run a task automatically on a timer, using your OS scheduler (launchd on macOS, cron on Linux, Task Scheduler on Windows). A scheduled run behaves exactly like typing `holt run` in that folder.
 
 ```bash
 holt schedule add "summarize my inbox and flag what is urgent" 07:00 --notify
@@ -490,7 +490,7 @@ holt routine remove brief       # deletes the routine and its OS timer, if any
 
 Sources: give exactly one of `--skill <name>`, `--task "<prompt>"`, or `--template <t>`. A skill routine splices that skill's `SKILL.md` body into the prompt at run time; a task routine uses the prompt as-is.
 
-Scheduling: `--at HH:MM` (24h, daily) installs an OS timer through the same scheduler `holt schedule` uses (launchd on macOS, cron on Linux) whose command is `holt routine run <name> --quiet`. Omit `--at` for a manual, run-on-demand routine. Removing the routine removes its timer.
+Scheduling: `--at HH:MM` (24h, daily) installs an OS timer through the same scheduler `holt schedule` uses (launchd on macOS, cron on Linux, Task Scheduler on Windows) whose command is `holt routine run <name> --quiet`. Omit `--at` for a manual, run-on-demand routine. Removing the routine removes its timer.
 
 Output routing: by default the result prints to stdout. `--out <file>` also writes it to a file (relative to the routine's workspace); `--notify` pushes it to Telegram (guarded cleanly when Telegram is not set up). Both `--out` and `--notify` can also be passed to `holt routine run` for a single run. In `--quiet` mode (what the scheduler uses) stdout is suppressed but `--out` and `--notify` still fire.
 
