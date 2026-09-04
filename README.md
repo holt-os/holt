@@ -21,7 +21,7 @@
 - **Any brain, one assistant.** Bare `holt` launches a real interactive brain (Claude Code, Codex, or Gemini) branded as Holt, or you connect a direct API brain with your own key. Switch mid-conversation and keep the full context.
 - **Private memory you can see.** Per-folder semantic recall and distilled facts, an interactive knowledge graph (`holt graph`), and a self-maintaining wiki (`holt wiki`) over everything you tell it. Nothing leaves your machine.
 - **Ambient by default.** `holt hook` wires memory into Claude Code so it recalls and remembers with no manual step, and an MCP server exposes the same memory to Cursor and Codex.
-- **Runs your work.** Run a task once, on a schedule, or as a named routine, and reach it from your phone over Telegram.
+- **Runs your work.** Run a task once, on a schedule, or as a named routine, and reach it from your phone over Telegram. Real OS timers on macOS, Linux, and Windows.
 - **Useful on day one.** `/skill onboard` interviews you and fills memory in about fifteen minutes, `/skill audit` shows what is still missing, and `/skill level-up` turns one manual chore a week into something Holt does.
 - **Extensible, zero-infra.** Thirteen built-in skills plus a git-based community registry (`holt skill search`) in the portable `SKILL.md` format.
 - **Writes in your voice.** `holt write` drafts in a style Holt learns from you, with built-in anti-AI checks.
@@ -62,6 +62,14 @@ holt           # start your assistant (or use your custom command, e.g. `ai`)
 That is it. Bare `holt` sets the folder up the first time (trust, brain, memory hooks) and then launches the **real interactive brain** (Claude Code, Codex, or Gemini), branded as Holt. Run `holt help` for the full command list.
 
 Prefer to step through setup on its own first? `holt init` still does that, then `holt` starts the session.
+
+Then, in that first session, run:
+
+```
+/skill onboard
+```
+
+An empty Holt gives generic answers, which is the usual reason people install it and drift away. `onboard` is a fifteen minute interview that fills memory with who you are and what you are working on, and ends by doing one real piece of your work. Everything else gets better once it knows you.
 
 ## What bare `holt` does
 
@@ -622,7 +630,8 @@ Built in always-shippable phases toward a full-vision v1:
 4. **Knowledge graph**: see and navigate your own memory with `holt graph` *(shipped)*
 5. **Everywhere**: MCP server so other tools read Holt's memory, plus `holt run`, scheduling, and Telegram *(shipped)*
 6. **Knowledge wiki**: LLM-maintained, cross-linked, regenerable pages over your memory with `holt wiki` *(shipped)*
-7. **Next**: docs site, skill registry publishing, more channels
+7. **Onboarding**: a day-one interview that fills memory, plus the weekly audit and level-up ritual *(shipped)*
+8. **Next**: docs site, skill registry publishing, more channels
 
 ## Contributing
 
