@@ -22,7 +22,8 @@
 - **Private memory you can see.** Per-folder semantic recall and distilled facts, an interactive knowledge graph (`holt graph`), and a self-maintaining wiki (`holt wiki`) over everything you tell it. Nothing leaves your machine.
 - **Ambient by default.** `holt hook` wires memory into Claude Code so it recalls and remembers with no manual step, and an MCP server exposes the same memory to Cursor and Codex.
 - **Runs your work.** Run a task once, on a schedule, or as a named routine, and reach it from your phone over Telegram.
-- **Extensible, zero-infra.** Ten built-in skills plus a git-based community registry (`holt skill search`) in the portable `SKILL.md` format.
+- **Useful on day one.** `/skill onboard` interviews you and fills memory in about fifteen minutes, `/skill audit` shows what is still missing, and `/skill level-up` turns one manual chore a week into something Holt does.
+- **Extensible, zero-infra.** Thirteen built-in skills plus a git-based community registry (`holt skill search`) in the portable `SKILL.md` format.
 - **Writes in your voice.** `holt write` drafts in a style Holt learns from you, with built-in anti-AI checks.
 
 > **Status:** shipping and usable today. Every capability above works now.
@@ -42,6 +43,14 @@ Or with npm, if you already have Node:
 ```bash
 npm install -g @holt-os/holt
 ```
+
+**Not comfortable in a terminal?** Install [Claude Code](https://claude.com/claude-code), open it, and paste this:
+
+```
+Set up Holt for me: read https://raw.githubusercontent.com/holt-os/holt/main/docs/INSTALL.md and follow it exactly.
+```
+
+It installs Holt, checks its own work, and fixes what breaks. Full detail, system requirements, and troubleshooting: [docs/INSTALL.md](./docs/INSTALL.md).
 
 ## Quickstart
 
@@ -139,6 +148,8 @@ Every exchange is saved to `<folder>/.holt/memory/turns.jsonl`, private and loca
 
 When you end a chat, Holt asks the brain to distill 1 to 5 durable facts from the session (decisions, preferences, key names, numbers) and writes them to a human-readable `<folder>/.holt/memory/facts.md` you can read and edit. Those facts are also embedded and ranked slightly higher than raw turns during recall, so the signal rises to the top over time. See them with `holt memory facts`. Turn it off by setting `memory.extractFacts` to `false` in `config.json`.
 
+You do not have to wait for the end of a session. `holt memory add "<fact>"` saves one immediately, and duplicates are ignored, so it is safe to run twice. Piping in several facts, one per line, works too. Prefer this over editing `facts.md` by hand: a fact typed straight into that file is never embedded, so semantic recall will not find it.
+
 Two recall modes, picked automatically:
 
 - **Semantic** (best): a local [Ollama](https://ollama.com) with an embedding model, which `holt init` offers to set up for you. Recall matches by meaning: asking "who owns my apartment" finds "my landlord is called Pieter". No API keys, nothing leaves your machine.
@@ -148,6 +159,7 @@ Inspect it any time:
 
 ```bash
 holt memory                    # stats for this folder
+holt memory add "<fact>"       # teach it something durable right now
 holt memory facts              # show the distilled facts (facts.md)
 holt memory search <query>     # find remembered moments
 holt memory embed              # embed older moments for semantic recall
@@ -315,6 +327,11 @@ Holt ships with a small, curated set of general-purpose skills, available in eve
 - **plan**: break a goal into a concrete, ordered set of steps.
 - **rewrite**: tighten and clarify a piece of text without changing its meaning.
 - **decide**: weigh a decision and give a clear recommendation.
+- **onboard**: a guided first-day interview that fills memory with who you are and what you are working on.
+- **audit**: a read-only health check across the four rungs, naming the gaps and the single next fix.
+- **level-up**: a weekly session that turns one recurring manual chore into something Holt does, and ships it.
+
+The last three are the setup loop. `onboard` on day one, then `audit` and `level-up` weekly. Holt gets useful in four rungs, in order: **Know** (it holds facts about you), **Reach** (it can see your real material), **Do** (it runs your repeated work), **Run** (it acts while you are away). Automating on top of an empty memory just produces confident nonsense on a timer, so the order matters.
 
 ### Skill registry (`holt skill search` / `publish`)
 
@@ -578,7 +595,7 @@ holt graph           see your memory as an interactive knowledge graph
 holt mcp             run an MCP server so other tools use this folder's memory (holt mcp setup)
 holt hook            ambient memory for Claude Code: install | remove | status
 holt skill           manage skills: list | show | create | add | remove
-holt memory          inspect memory: holt memory [search <query> | facts | embed | clear]
+holt memory          inspect memory: holt memory [add <fact> | search <query> | facts | embed | clear]
 holt wiki            derived knowledge wiki: holt wiki [sync | auto | rebuild | lint | list | show | status]
 holt setting         configure brains, API brains, and launch command
 holt login <brain>   sign in to claude, codex, or gemini

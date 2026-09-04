@@ -47,6 +47,7 @@ import {
   appendCronLine,
   plistPath,
 } from '../scheduler';
+import { printManualInstall } from './schedule';
 
 // ---- schedule bridge (a routine with a time owns a scheduler Job) ----------
 
@@ -121,10 +122,7 @@ function installSchedule(r: Routine): void {
 
   if (process.platform === 'darwin') installDarwin(job, holtPath);
   else if (process.platform === 'linux') installLinux(job, holtPath);
-  else {
-    console.log(c.dim('\n  Your OS has no built-in installer. Install this entry yourself:'));
-    console.log('  ' + buildCronLine(job, holtPath));
-  }
+  else printManualInstall(job, holtPath);
 }
 
 function removeScheduleDarwin(id: string): void {

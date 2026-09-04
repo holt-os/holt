@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import {
   memStats,
   recall,
+  saveFact,
   clearMemory,
   loadTurns,
   embeddingsAvailable,
@@ -16,6 +17,7 @@ import {
   globalWorkspaces,
   globalMemPath,
   memoryScopesPath,
+  newSessionId,
 } from '../memory';
 import { ensureTrusted, workspace } from '../workspace';
 import { c, createReader } from '../ui';
@@ -50,6 +52,41 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
       process.stdout.write(`\r  embedding ${done}/${total}...`);
     });
     console.log('\n' + c.green(`  Done. ${r.embedded} of ${r.total} memories embedded.`) + '\n');
+    close();
+    return;
+  }
+
+  if (action === 'add' || action === 'remember') {
+    // One fact per call, or several at once when piped in on stdin (one per
+    // line). Skills use this to seed memory during onboarding, so it has to
+    // work without waiting for end-of-chat distillation.
+    let items: string[] = [];
+    const inline = rest.join(' ').trim();
+    if (inline) items = [inline];
+    else if (!process.stdin.isTTY) {
+      items = readFileSync(0, 'utf8')
+        .split('\n')
+        .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
+        .filter(Boolean);
+    }
+    if (items.length === 0) {
+      console.log(c.dim('\n  Usage: holt memory add "<fact>"   (or pipe one fact per line on stdin)\n'));
+      close();
+      return;
+    }
+    const session = newSessionId();
+    let saved = 0;
+    let dupes = 0;
+    for (const item of items) {
+      if (await saveFact(item, session)) saved++;
+      else dupes++;
+    }
+    const dupNote = dupes ? c.dim(`  (${dupes} already known)`) : '';
+    console.log('\n' + c.green(`  Remembered ${saved} fact${saved === 1 ? '' : 's'}.`) + dupNote);
+    if (saved && !(await embeddingsAvailable())) {
+      console.log(c.dim('  Saved in keyword mode. Run "holt doctor --fix" for semantic recall.'));
+    }
+    console.log('');
     close();
     return;
   }
@@ -95,8 +132,8 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
   }
 
   // An explicit but unrecognized subcommand is a typo, not a request for stats.
-  if (action && !['clear', 'embed', 'facts', 'search', 'global'].includes(action)) {
-    console.error(`\n  Unknown memory subcommand: "${sub}". Use: search <query> | facts | embed | global | clear\n`);
+  if (action && !['add', 'remember', 'clear', 'embed', 'facts', 'search', 'global'].includes(action)) {
+    console.error(`\n  Unknown memory subcommand: "${sub}". Use: add <fact> | search <query> | facts | embed | global | clear\n`);
     process.exitCode = 1;
     close();
     return;
@@ -118,7 +155,8 @@ export async function memoryCmd(sub?: string, rest: string[] = []): Promise<void
   }
   const gEnabled = isGlobalEnabled(workspace());
   console.log(`  global      ${gEnabled ? c.green('on') + c.dim('  (contributes + reads shared facts)') : c.dim('off  (this folder is isolated, the default)')}`);
-  console.log(c.dim('\n  holt memory search <query>   find remembered moments'));
+  console.log(c.dim('\n  holt memory add "<fact>"     teach it something durable right now'));
+  console.log(c.dim('  holt memory search <query>   find remembered moments'));
   console.log(c.dim('  holt memory facts            show distilled facts (facts.md)'));
   console.log(c.dim('  holt memory embed            embed older memories for semantic recall'));
   console.log(c.dim('  holt memory global           share high-value facts across your folders'));

@@ -19,6 +19,7 @@ import {
   resolveHoltPath,
   buildLaunchdPlist,
   buildCronLine,
+  buildWindowsTaskFields,
   stripCronLines,
   appendCronLine,
   plistPath,
@@ -131,11 +132,35 @@ async function addCmd(rest: string[]): Promise<void> {
 
   if (process.platform === 'darwin') installDarwin(job, holtPath);
   else if (process.platform === 'linux') installLinux(job, holtPath);
-  else {
+  else printManualInstall(job, holtPath);
+  console.log('');
+}
+
+/**
+ * No OS installer for this platform. Print something the user can actually act
+ * on: Task Scheduler fields on Windows, a cron line everywhere else. The job is
+ * saved either way, so "holt schedule list" still shows it.
+ */
+export function printManualInstall(job: Job, holtPath: string): void {
+  if (process.platform !== 'win32') {
     console.log(c.dim('\n  Your OS has no built-in installer. Install this entry yourself:'));
     console.log('  ' + buildCronLine(job, holtPath));
+    return;
   }
-  console.log('');
+
+  const f = buildWindowsTaskFields(job, holtPath);
+  console.log(c.dim('\n  Saved, but not started: Holt cannot install timers on Windows yet.'));
+  console.log(c.dim('  Open Task Scheduler, choose "Create Basic Task", and fill in:'));
+  console.log(`    Name        ${f.name}`);
+  console.log(`    Trigger     Daily at ${f.when}`);
+  console.log(`    Program     ${f.program}`);
+  console.log(`    Arguments   ${f.args}`);
+  console.log(`    Start in    ${f.startIn}`);
+  if (job.notify) {
+    console.log(
+      c.dim('\n  Note: --notify does not carry over to Task Scheduler. Read the log file instead.'),
+    );
+  }
 }
 
 function listCmd(): void {

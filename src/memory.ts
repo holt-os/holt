@@ -132,7 +132,10 @@ export function normalizeFact(s: string): string {
     .replace(/[.,;:!?]+$/, '');
 }
 
-const FACTS_HEADER = '# Holt facts\n\nDistilled memories for this folder. Safe to edit by hand.\n';
+const FACTS_HEADER =
+  '# Holt facts\n\nDistilled memories for this folder. Edit or delete lines freely.\n' +
+  'To ADD one, use `holt memory add "<fact>"`: a line typed in here by hand is\n' +
+  'never embedded, so semantic recall will not find it.\n';
 
 /**
  * Save a distilled fact. Dedups (normalized exact match) against existing

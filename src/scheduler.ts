@@ -210,6 +210,36 @@ export function buildCronLine(job: Job, holtPath: string): string {
   return `${minute} ${hour} * * * ${command} # ${CRON_MARKER}${job.id}`;
 }
 
+/**
+ * PURE: the fields Windows Task Scheduler asks for, since Windows has no
+ * crontab and printing a cron line there is worse than useless. Returned as
+ * separate fields rather than one command string because Task Scheduler takes
+ * them separately, which also sidesteps cmd quoting.
+ */
+export function buildWindowsTaskFields(
+  job: Job,
+  holtPath: string,
+): { program: string; args: string; startIn: string; when: string; name: string } {
+  let args: string[];
+  if (job.runArgs && job.runArgs.length > 0) {
+    args = [...job.runArgs, '--quiet'];
+  } else {
+    args = ['run', job.task];
+    if (job.brain) args.push('--brain', job.brain);
+    args.push('--quiet', '--out', logPath(job.id));
+  }
+  // Anything with a space (a task phrase, a path under "Program Files") has to
+  // be quoted or Task Scheduler splits it into separate arguments.
+  const quoted = args.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a));
+  return {
+    program: holtPath,
+    args: quoted.join(' '),
+    startIn: job.workspace,
+    when: job.when,
+    name: `Holt ${job.id}`,
+  };
+}
+
 /** PURE: remove any crontab lines tagged for this job id. */
 export function stripCronLines(crontab: string, id: string): string {
   const marker = `# ${CRON_MARKER}${id}`;
