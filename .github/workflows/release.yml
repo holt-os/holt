@@ -67,7 +67,17 @@ jobs:
           echo "no em-dashes found"
 
       - name: Publish to npm
-        run: npm publish --access public
+        # Skip when this version is already on npm, so re-running a run that
+        # died in a later step can actually recover. Without this the re-run
+        # republishes, npm answers E403, and the Homebrew bump stays
+        # permanently unreachable for that version.
+        run: |
+          set -euo pipefail
+          if npm view "@holt-os/holt@${VERSION}" version >/dev/null 2>&1; then
+            echo "@holt-os/holt@${VERSION} is already published. Skipping publish."
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -82,12 +92,22 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://registry.npmjs.org/@holt-os/holt/-/holt-${VERSION}.tgz"
-          # The tarball can take a few seconds to become fetchable after publish.
-          for i in $(seq 1 12); do
+          # npm updates the registry metadata before the CDN serves the tarball.
+          # That gap was 72s of headroom against a real wait of about six
+          # minutes on 0.18.0, which failed the release after a successful
+          # publish. 10 minutes of headroom, and say so plainly when it runs out.
+          for i in $(seq 1 60); do
             if curl -fsSL "$URL" -o /tmp/holt.tgz; then break; fi
-            echo "waiting for npm tarball ($i/12)..."
-            sleep 6
+            echo "waiting for npm tarball ($i/60)..."
+            sleep 10
           done
+          if [ ! -s /tmp/holt.tgz ]; then
+            echo "::error::npm never served ${URL} after 10 minutes."
+            echo "::error::${VERSION} IS published to npm. Only the Homebrew bump is missing."
+            echo "::error::Do not re-run this workflow: it republishes first and npm rejects that with E403."
+            echo "::error::Bump tap/Formula/holt.rb by hand with the url above and its sha256."
+            exit 1
+          fi
           SHA=$(shasum -a 256 /tmp/holt.tgz | awk '{print $1}')
           echo "url=$URL"
           echo "sha256=$SHA"
