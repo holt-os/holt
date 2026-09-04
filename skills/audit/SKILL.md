@@ -86,9 +86,9 @@ an essay.
 - **Hand-edited facts.** Facts added by editing `facts.md` directly are never
   embedded, so they never come back through recall. They must be re-added with
   `holt memory add`.
-- **Windows and timers.** On Windows, `holt schedule` and a routine's `--at`
-  time do not install anything. Anything on rung four there has to run another
-  way, so check the platform before calling rung four solid.
+- **Timers need the machine awake.** A scheduled job fires only if the computer
+  is on at that time; a missed run is skipped, not caught up. If rung four looks
+  solid but the log file is empty, check that first.
 - **Automation above an empty memory.** If Run looks solid while Know is thin,
   say so bluntly. That setup produces confident wrong output on a timer, and it
   is the most expensive failure on this list.

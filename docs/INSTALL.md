@@ -213,10 +213,9 @@ honest options are a personal machine, or asking IT for an exception.
 
 Worth knowing before you rely on them:
 
-- **Timers do not run on Windows yet.** `holt schedule` and a routine's `--at`
-  option install nothing on Windows. Holt saves the job and prints the fields to
-  paste into Task Scheduler, but it will not set it up for you. macOS and Linux
-  install real timers.
 - **Automatic Ollama setup is macOS only.** Elsewhere Holt prints the download
   link and you install it yourself.
+- **Windows timers need the machine awake.** `holt schedule` and a routine's
+  `--at` register a real Task Scheduler entry, but a missed run is skipped
+  rather than caught up when the laptop was asleep or off at that time.
 - **Git is needed for `holt skill add` from a URL.** Nothing else needs it.

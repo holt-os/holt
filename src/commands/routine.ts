@@ -14,8 +14,7 @@
  * are non-interactive: `holt routine run` auto-behaves like `holt run` under a
  * non-TTY (refuses cleanly if the folder is untrusted).
  */
-import { spawnSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { ensureTrusted, isTrusted, workspace } from '../workspace';
 import { c, createReader } from '../ui';
@@ -41,13 +40,8 @@ import {
   removeJob,
   newJobId,
   resolveHoltPath,
-  buildLaunchdPlist,
-  buildCronLine,
-  stripCronLines,
-  appendCronLine,
-  plistPath,
 } from '../scheduler';
-import { printManualInstall } from './schedule';
+import { installForPlatform, removeForPlatform } from './schedule';
 
 // ---- schedule bridge (a routine with a time owns a scheduler Job) ----------
 
@@ -75,43 +69,6 @@ function routineJobId(name: string): string {
   return `routine-${sanitizeRoutineName(name)}`;
 }
 
-function installDarwin(job: Job, holtPath: string): void {
-  const path = plistPath(job.id);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, buildLaunchdPlist(job, holtPath), 'utf8');
-  const res = spawnSync('launchctl', ['load', '-w', path], { encoding: 'utf8' });
-  if (res.status === 0) {
-    console.log(c.green('  Loaded into launchd.'));
-  } else {
-    console.log(c.dim('  Wrote the plist, but launchctl load did not confirm.'));
-    console.log(c.dim(`  Load it yourself with:  launchctl load -w ${path}`));
-    if (res.stderr && res.stderr.trim()) console.log(c.dim(`  (${res.stderr.trim()})`));
-  }
-  console.log(c.dim(`  plist: ${path}`));
-}
-
-function currentCrontab(): string {
-  const res = spawnSync('crontab', ['-l'], { encoding: 'utf8' });
-  return res.status === 0 && typeof res.stdout === 'string' ? res.stdout : '';
-}
-
-function writeCrontab(body: string): boolean {
-  const res = spawnSync('crontab', ['-'], { input: body, encoding: 'utf8' });
-  return res.status === 0;
-}
-
-function installLinux(job: Job, holtPath: string): void {
-  const line = buildCronLine(job, holtPath);
-  const next = appendCronLine(currentCrontab(), line);
-  if (writeCrontab(next)) {
-    console.log(c.green('  Added to your crontab.'));
-    console.log(c.dim(`  line: ${line}`));
-  } else {
-    console.log(c.dim('  Could not update the crontab automatically. Add this line yourself:'));
-    console.log('  ' + line);
-  }
-}
-
 /** Install the OS timer for a routine (idempotent: strips any prior one first). */
 function installSchedule(r: Routine): void {
   const holtPath = resolveHoltPath();
@@ -120,27 +77,7 @@ function installSchedule(r: Routine): void {
   removeSchedule(r.name);
   addJob(job);
 
-  if (process.platform === 'darwin') installDarwin(job, holtPath);
-  else if (process.platform === 'linux') installLinux(job, holtPath);
-  else printManualInstall(job, holtPath);
-}
-
-function removeScheduleDarwin(id: string): void {
-  const path = plistPath(id);
-  if (existsSync(path)) {
-    spawnSync('launchctl', ['unload', path], { encoding: 'utf8' });
-    try {
-      rmSync(path);
-    } catch {
-      // ignore
-    }
-  }
-}
-
-function removeScheduleLinux(id: string): void {
-  const body = currentCrontab();
-  const next = stripCronLines(body, id);
-  writeCrontab(next);
+  installForPlatform(job, holtPath);
 }
 
 /** Remove a routine's OS timer + its scheduler store entry, if any. */
@@ -149,8 +86,7 @@ function removeSchedule(name: string): void {
   const existed = loadJobs().some((j) => j.id === id);
   removeJob(id);
   if (!existed) return;
-  if (process.platform === 'darwin') removeScheduleDarwin(id);
-  else if (process.platform === 'linux') removeScheduleLinux(id);
+  removeForPlatform(id);
 }
 
 // ---- arg parsing -----------------------------------------------------------

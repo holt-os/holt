@@ -19,7 +19,10 @@ import {
   resolveHoltPath,
   buildLaunchdPlist,
   buildCronLine,
-  buildWindowsTaskFields,
+  buildWindowsScript,
+  buildSchtasksArgs,
+  cmdScriptPath,
+  taskName,
   stripCronLines,
   appendCronLine,
   plistPath,
@@ -130,36 +133,48 @@ async function addCmd(rest: string[]): Promise<void> {
   if (job.notify) console.log(`  notify     on (pushes output to Telegram)`);
   console.log(`  log        ${logPath(job.id)}`);
 
-  if (process.platform === 'darwin') installDarwin(job, holtPath);
-  else if (process.platform === 'linux') installLinux(job, holtPath);
-  else printManualInstall(job, holtPath);
+  installForPlatform(job, holtPath);
   console.log('');
 }
 
-/**
- * No OS installer for this platform. Print something the user can actually act
- * on: Task Scheduler fields on Windows, a cron line everywhere else. The job is
- * saved either way, so "holt schedule list" still shows it.
- */
-export function printManualInstall(job: Job, holtPath: string): void {
-  if (process.platform !== 'win32') {
+/** Install the OS timer for this job, or explain what to do by hand. */
+export function installForPlatform(job: Job, holtPath: string): void {
+  if (process.platform === 'darwin') installDarwin(job, holtPath);
+  else if (process.platform === 'linux') installLinux(job, holtPath);
+  else if (process.platform === 'win32') installWindows(job, holtPath);
+  else {
     console.log(c.dim('\n  Your OS has no built-in installer. Install this entry yourself:'));
     console.log('  ' + buildCronLine(job, holtPath));
-    return;
   }
+}
 
-  const f = buildWindowsTaskFields(job, holtPath);
-  console.log(c.dim('\n  Saved, but not started: Holt cannot install timers on Windows yet.'));
-  console.log(c.dim('  Open Task Scheduler, choose "Create Basic Task", and fill in:'));
-  console.log(`    Name        ${f.name}`);
-  console.log(`    Trigger     Daily at ${f.when}`);
-  console.log(`    Program     ${f.program}`);
-  console.log(`    Arguments   ${f.args}`);
-  console.log(`    Start in    ${f.startIn}`);
-  if (job.notify) {
+function installWindows(job: Job, holtPath: string): void {
+  const script = cmdScriptPath(job.id);
+  mkdirSync(dirname(script), { recursive: true });
+  writeFileSync(script, buildWindowsScript(job, holtPath), 'utf8');
+
+  const res = spawnSync('schtasks', buildSchtasksArgs(job, script), { encoding: 'utf8' });
+  if (res.status === 0) {
+    console.log(c.green('  Registered with Task Scheduler.'));
+  } else {
+    console.log(c.dim('  Wrote the task script, but schtasks did not confirm.'));
+    console.log(c.dim('  Register it yourself with:'));
     console.log(
-      c.dim('\n  Note: --notify does not carry over to Task Scheduler. Read the log file instead.'),
+      c.dim(`    schtasks /Create /F /SC DAILY /ST ${job.when} /TN "${taskName(job.id)}" /TR "${script}"`),
     );
+    const why = (res.stderr || '').trim() || (res.error ? res.error.message : '');
+    if (why) console.log(c.dim(`  (${why})`));
+  }
+  console.log(c.dim(`  task: ${taskName(job.id)}`));
+  console.log(c.dim(`  script: ${script}`));
+}
+
+function removeWindows(id: string): void {
+  spawnSync('schtasks', ['/Delete', '/F', '/TN', taskName(id)], { encoding: 'utf8' });
+  try {
+    rmSync(cmdScriptPath(id));
+  } catch {
+    // already gone
   }
 }
 
@@ -198,6 +213,13 @@ function removeLinux(id: string): void {
   spawnSync('crontab', ['-'], { input: next, encoding: 'utf8' });
 }
 
+/** Remove the OS timer for this job id. Safe to call when none was installed. */
+export function removeForPlatform(id: string): void {
+  if (process.platform === 'darwin') removeDarwin(id);
+  else if (process.platform === 'linux') removeLinux(id);
+  else if (process.platform === 'win32') removeWindows(id);
+}
+
 function removeCmd(rest: string[]): void {
   const id = rest[0];
   if (!id) {
@@ -209,8 +231,7 @@ function removeCmd(rest: string[]): void {
   const existed = before.some((j) => j.id === id);
   removeJob(id);
 
-  if (process.platform === 'darwin') removeDarwin(id);
-  else if (process.platform === 'linux') removeLinux(id);
+  removeForPlatform(id);
 
   if (existed) console.log('\n' + c.green(`  Removed schedule ${id}.`) + '\n');
   else {
