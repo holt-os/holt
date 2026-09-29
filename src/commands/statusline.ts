@@ -14,12 +14,15 @@
  *     unexpected places / types. Never throw.
  *   - Always print exactly ONE compact line. The baseline is `Holt`. When we can
  *     recover a folder and/or model from the payload we append them with a
- *     middle-dot separator: `Holt · <folder> · <model>` (NOT an em-dash).
+ *     middle-dot separator (NOT an em-dash):
+ *     `Holt · <folder> (<branch>) · <model> · [██░░░…] 8%`: the git branch
+ *     and the context-window fill bar, ANSI-coloured unless NO_COLOR is set.
  *
  * The status line is the PERSISTENT Holt marker inside the interactive session:
  * Claude Code renders its own (uncustomizable) welcome box above, but this line
  * stays put and keeps the session visibly "Holt".
  */
+import { execFileSync } from 'node:child_process';
 import { basename } from 'node:path';
 
 /** Middle dot (U+00B7) separator. Deliberately NOT an em-dash. */
@@ -67,6 +70,18 @@ function str(v: unknown): string | undefined {
   return t.length ? t : undefined;
 }
 
+/** Raw working dir from the payload (field shapes seen across Claude Code versions). */
+function dirFrom(data: unknown): string | undefined {
+  const ws = get(data, 'workspace');
+  return (
+    str(get(ws, 'current_dir')) ??
+    str(get(ws, 'project_dir')) ??
+    str(get(ws, 'cwd')) ??
+    str(get(data, 'cwd')) ??
+    str(get(data, 'current_dir'))
+  );
+}
+
 /**
  * Pull the working folder out of a Claude Code status payload, tolerating the
  * field shapes seen across versions:
@@ -77,13 +92,7 @@ function str(v: unknown): string | undefined {
  * Returns the folder BASENAME (what a human recognizes), or undefined.
  */
 function folderFrom(data: unknown): string | undefined {
-  const ws = get(data, 'workspace');
-  const dir =
-    str(get(ws, 'current_dir')) ??
-    str(get(ws, 'project_dir')) ??
-    str(get(ws, 'cwd')) ??
-    str(get(data, 'cwd')) ??
-    str(get(data, 'current_dir'));
+  const dir = dirFrom(data);
   if (!dir) return undefined;
   try {
     const base = basename(dir.replace(/[\\/]+$/, ''));
@@ -112,14 +121,84 @@ function modelFrom(data: unknown): string | undefined {
   );
 }
 
-/** PURE: build the status line from an already-parsed (or unparsed) payload. */
-export function renderStatusLine(data: unknown): string {
-  const parts = ['Holt'];
+/**
+ * Context-window fill as an integer 0..100, or undefined. Prefers
+ * context_window.used_percentage; falls back to deriving it from
+ * current_usage input tokens / context_window_size when only those exist.
+ */
+function contextPctFrom(data: unknown): number | undefined {
+  const cw = get(data, 'context_window');
+  const clamp = (n: number): number => Math.max(0, Math.min(100, Math.round(n)));
+  const used = get(cw, 'used_percentage');
+  if (typeof used === 'number' && Number.isFinite(used)) return clamp(used);
+  if (typeof used === 'string' && used.trim() && Number.isFinite(Number(used))) {
+    return clamp(Number(used));
+  }
+  const size = get(cw, 'context_window_size');
+  const cu = get(cw, 'current_usage');
+  if (typeof size === 'number' && size > 0 && cu && typeof cu === 'object') {
+    const n = (k: string): number => {
+      const v = get(cu, k);
+      return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+    };
+    const tokens =
+      n('input_tokens') + n('cache_creation_input_tokens') + n('cache_read_input_tokens');
+    if (tokens > 0) return clamp((tokens / size) * 100);
+  }
+  return undefined;
+}
+
+/** 20-cell bar, one cell per 5%. */
+export function contextBar(pct: number | undefined): string {
+  if (pct === undefined) return `[${'░'.repeat(20)}] --`;
+  const filled = Math.floor(pct / 5);
+  return `[${'█'.repeat(filled)}${'░'.repeat(20 - filled)}] ${pct}%`;
+}
+
+/** ANSI styling, disabled when NO_COLOR is set. */
+function paint(code: string, text: string, color: boolean): string {
+  return color ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+
+/**
+ * PURE: build the status line from an already-parsed (or unparsed) payload.
+ * Shape: `Holt · <folder> (<branch>) · <model> · [██░░…] 8%`. Every segment
+ * after `Holt` is dropped when the payload can't supply it; the context bar is
+ * shown whenever a folder or model was recovered (i.e. it's a real payload).
+ */
+export function renderStatusLine(
+  data: unknown,
+  opts: { branch?: string; color?: boolean } = {},
+): string {
+  const color = opts.color ?? false;
+  const parts = [paint('1;35', 'Holt', color)];
   const folder = folderFrom(data);
-  if (folder) parts.push(folder);
+  if (folder) {
+    const branch = str(opts.branch);
+    parts.push(
+      paint('1;34', folder, color) + (branch ? ' ' + paint('1;33', `(${branch})`, color) : ''),
+    );
+  }
   const model = modelFrom(data);
-  if (model) parts.push(model);
+  if (model) parts.push(paint('0;36', model, color));
+  if (folder || model) parts.push(paint('0;32', contextBar(contextPctFrom(data)), color));
   return parts.join(SEP);
+}
+
+/** Current git branch for a dir, or undefined. Fast, lock-free, never throws. */
+function gitBranch(dir: string | undefined): string | undefined {
+  if (!dir) return undefined;
+  try {
+    const out = execFileSync('git', ['-C', dir, 'symbolic-ref', '--short', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 500,
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    });
+    return str(out);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Parse the raw stdin into a value, tolerating empty/malformed input. */
@@ -139,7 +218,11 @@ export async function statusline(): Promise<void> {
   let line = 'Holt';
   try {
     const raw = await readStdin(1000);
-    line = renderStatusLine(parse(raw));
+    const data = parse(raw);
+    line = renderStatusLine(data, {
+      branch: gitBranch(dirFrom(data)),
+      color: !process.env.NO_COLOR,
+    });
   } catch {
     line = 'Holt';
   }
