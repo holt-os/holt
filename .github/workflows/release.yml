@@ -2,7 +2,8 @@ name: Release
 
 # Fires when a version tag is pushed (scripts/release.sh does that). It verifies
 # the tag matches the code, publishes to npm with an automation token (no passkey
-# prompt), then bumps the Homebrew formula in holt-os/homebrew-tap.
+# prompt), bumps the Homebrew formula in holt-os/homebrew-tap, then creates the
+# GitHub Release for the tag.
 #
 # Required repo secrets:
 #   NPM_TOKEN            npm "Automation" access token (bypasses 2FA on publish)
@@ -13,7 +14,7 @@ on:
       - 'v*.*.*'
 
 permissions:
-  contents: read
+  contents: write # gh release create
 
 jobs:
   release:
@@ -129,3 +130,16 @@ jobs:
           git add Formula/holt.rb
           git commit -m "holt ${VERSION}"
           git push
+
+      - name: Create the GitHub Release
+        # Skip when the release already exists (written by hand, or a re-run), so
+        # hand-written notes are never overwritten.
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists. Skipping."
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
