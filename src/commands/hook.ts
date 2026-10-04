@@ -37,7 +37,7 @@ import { homedir } from 'node:os';
 import { loadConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig } from '../config';
 import { isInstalled, type Turn } from '../brains';
 import { isTrusted, GLOBAL_DIR } from '../workspace';
-import { recall, memDir, newSessionId } from '../memory';
+import { recallContext, formatMemoryContext, memDir, newSessionId } from '../memory';
 import { extractAndSaveFacts, MIN_EXCHANGES_FOR_EXTRACTION } from '../facts';
 import { syncWiki, resolveBrainMaintainer, wikiDir } from '../wiki';
 import { c } from '../ui';
@@ -461,24 +461,25 @@ async function inject(): Promise<void> {
     }
 
     const session = data.session_id || newSessionId();
-    const hits = await recall(prompt, session, 4);
-    if (!hits.length) {
+    // The hook fires on every prompt, so it gets a smaller default budget than
+    // holt run/chat. HOLT_RECALL_BUDGET still overrides it.
+    const ctx = await recallContext(prompt, session, { budget: Number(process.env.HOLT_RECALL_BUDGET) || 8000 });
+    if (!ctx.hits) {
       dlog('inject -> recalled 0 notes');
       return;
     }
 
-    const lines = hits.map((h) => `- ${h.turn.content.replace(/\s+/g, ' ').trim().slice(0, 500)}`);
     // ONLY the context block goes to stdout; this is injected verbatim. The
     // wording frames these as already-known background so the model uses them
     // silently instead of narrating "let me check your memory / recalled N".
     process.stdout.write(
       [
-        'Background on this user, recalled from earlier sessions (use it directly, do not mention looking it up):',
-        ...lines,
+        'Background on this user, recalled from earlier sessions (use it directly, do not mention looking it up).',
+        formatMemoryContext(ctx),
         '',
       ].join('\n'),
     );
-    dlog(`inject -> injected ${hits.length} note(s)`);
+    dlog(`inject -> injected ${ctx.hits} note(s), ${ctx.chars} chars`);
   } catch (e) {
     // Diagnostics to stderr only, never stdout.
     process.stderr.write('holt hook inject: ' + (e instanceof Error ? e.message : String(e)) + '\n');

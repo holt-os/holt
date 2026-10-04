@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { loadConfig, saveConfig, BRAIN_IDS, findApiBrain, resolveApiKey, loginUnavailable, PROVIDER_ENV, type BrainId, type ApiBrain, type HoltConfig, type OutputFormat } from '../config';
 import { isInstalled, renderPrompt, runBrain, looksLikeAuthError, MAX_REPLAY_TURNS, type Turn } from '../brains';
 import { runApiBrain } from '../apibrain';
-import { recall, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
+import { recall, recallContext, formatMemoryContext, appendTurn, embed, embeddingsAvailable, memStats, newSessionId } from '../memory';
 import { extractAndSaveFacts } from '../facts';
 import { syncWiki, resolveBrainMaintainer } from '../wiki';
 import { saveReply } from '../output';
@@ -329,12 +329,13 @@ export async function chat(): Promise<void> {
       }
     }
 
-    const remembered = await recall(line, session, 4);
+    const recalledCtx = await recallContext(line, session);
+    const remembered = formatMemoryContext(recalledCtx);
     // Branding: the pre-reply status line is always "Holt is thinking", never the
     // underlying brain's label, so chat feels like Holt. The active brain still
     // shows in the sticky status bar.
-    const label = remembered.length
-      ? `Holt is thinking (recalled ${remembered.length} moment${remembered.length === 1 ? '' : 's'})...`
+    const label = recalledCtx.hits
+      ? `Holt is thinking (recalled ${recalledCtx.hits} moment${recalledCtx.hits === 1 ? '' : 's'})...`
       : `Holt is thinking...`;
     console.log(c.dim(`  ${label}`) + '\n');
 

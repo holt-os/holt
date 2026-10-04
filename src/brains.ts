@@ -22,22 +22,26 @@ export function isInstalled(command: string): boolean {
  * Render the conversation into a single prompt so context survives a brain
  * switch. Live history is capped; relevant older moments come from memory.
  */
-export function renderPrompt(history: Turn[], message: string, memory: Recalled[] = []): string {
+export function renderPrompt(history: Turn[], message: string, memory: Recalled[] | string = []): string {
   const recent = history.slice(-MAX_REPLAY_TURNS);
   const parts: string[] = [];
 
-  if (recent.length || memory.length) {
+  const memText = typeof memory === 'string' ? memory.trim() : '';
+  const memRows = typeof memory === 'string' ? [] : memory;
+  if (recent.length || memText || memRows.length) {
     parts.push(
       "You are the user's assistant, running through Holt, a tool that gives you durable memory of this user across sessions. Notes recalled from their past sessions may appear below; use them naturally and answer as their assistant.",
       'You are continuing an ongoing conversation. Use the context below and reply only as the assistant to the final User message.',
     );
   }
 
-  if (memory.length) {
+  if (memText) {
+    parts.push('', memText);
+  } else if (memRows.length) {
     parts.push(
       '',
       "Relevant notes from this user's earlier sessions:",
-      ...memory.map((m) => `- (${m.turn.role}) ${m.turn.content.slice(0, 500)}`),
+      ...memRows.map((m) => `- (${m.turn.role}) ${m.turn.content.slice(0, 500)}`),
     );
   }
 

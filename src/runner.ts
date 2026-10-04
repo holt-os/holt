@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { loadConfig, BRAIN_IDS, findApiBrain, resolveApiKey, type BrainId, type ApiBrain, type HoltConfig } from './config';
 import { isInstalled, renderPrompt, runBrain, looksLikeAuthError } from './brains';
 import { runApiBrain } from './apibrain';
-import { recall, appendTurn, embed, newSessionId } from './memory';
+import { appendTurn, embed, newSessionId, recallContext, formatMemoryContext } from './memory';
 import { skillsPromptBlock } from './skills';
 
 export interface RunOptions {
@@ -79,7 +79,7 @@ export async function runTask(task: string, opts: RunOptions = {}): Promise<RunR
     // land in a fresh session that recall will surface next time.
     const runSession = 'run-' + newSessionId();
 
-    const recalled = opts.recall !== false ? await recall(task, runSession, 4) : [];
+    const recalled = opts.recall !== false ? formatMemoryContext(await recallContext(task, runSession)) : '';
 
     const block = skillsPromptBlock();
     const base = renderPrompt([], task, recalled);

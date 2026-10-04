@@ -498,3 +498,172 @@ export async function backfillEmbeddings(
   writeFileSync(memPath(), turns.map((t) => JSON.stringify(t)).join('\n') + '\n', 'utf8');
   return { embedded, total: missing.length };
 }
+
+// ---- context recall (v2) ----
+//
+// recall() returns the top-k single rows. That loses the surrounding exchange,
+// the date, and anything past the first 500 chars once rendered. recallContext()
+// keeps recall()'s privacy and storage model but returns a dated, chronological
+// slice of the store, sized to a character budget:
+//   1. score every past row with a hybrid of embedding cosine and BM25 keywords
+//   2. take the top k rows, add each row's neighbours in the same session
+//   3. group by session, order by time, trim to the budget
+// Tunables: HOLT_RECALL_K, HOLT_RECALL_NEIGHBORS, HOLT_RECALL_BUDGET (chars).
+
+export interface ContextRow {
+  role: MemTurn['role'];
+  content: string;
+  ts: number;
+  hit: boolean;
+}
+export interface ContextBlock {
+  session: string;
+  ts: number;
+  rows: ContextRow[];
+}
+export interface MemoryContext {
+  blocks: ContextBlock[];
+  hits: number;
+  chars: number;
+}
+
+const envNum = (name: string, dflt: number): number => {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : dflt;
+};
+
+function bm25Scores(query: Set<string>, docs: string[]): number[] {
+  const toks = docs.map((d) => (d || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+  const N = toks.length || 1;
+  const avg = toks.reduce((a, t) => a + t.length, 0) / N || 1;
+  const df = new Map<string, number>();
+  for (const t of toks) for (const w of new Set(t)) if (query.has(w)) df.set(w, (df.get(w) || 0) + 1);
+  const k1 = 1.2;
+  const b = 0.75;
+  return toks.map((t) => {
+    if (!t.length) return 0;
+    const tf = new Map<string, number>();
+    for (const w of t) if (query.has(w)) tf.set(w, (tf.get(w) || 0) + 1);
+    let s = 0;
+    for (const [w, f] of tf) {
+      const n = df.get(w) || 0;
+      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
+      s += (idf * f * (k1 + 1)) / (f + k1 * (1 - b + (b * t.length) / avg));
+    }
+    return s;
+  });
+}
+
+export async function recallContext(
+  query: string,
+  currentSession: string,
+  opts: { k?: number; neighbors?: number; budget?: number; rowCap?: number } = {},
+): Promise<MemoryContext> {
+  const k = opts.k ?? envNum('HOLT_RECALL_K', 10);
+  const nb = opts.neighbors ?? envNum('HOLT_RECALL_NEIGHBORS', 1);
+  const budget = opts.budget ?? envNum('HOLT_RECALL_BUDGET', 16000);
+  const rowCap = opts.rowCap ?? envNum('HOLT_RECALL_ROWCAP', 2000);
+
+  const all = loadTurns();
+  const at = (i: number): MemTurn => all[i] as MemTurn;
+  const pastIdx: number[] = [];
+  all.forEach((t, i) => {
+    if (t.session !== currentSession) pastIdx.push(i);
+  });
+  if (!pastIdx.length) return { blocks: [], hits: 0, chars: 0 };
+
+  const qEmb = await embed(query);
+  const qTok = tokens(query);
+  const bm = bm25Scores(qTok, pastIdx.map((i) => at(i).content));
+  const bmMax = Math.max(0, ...bm) || 1;
+
+  const scored: Array<{ i: number; s: number }> = [];
+  pastIdx.forEach((i, j) => {
+    const t = at(i);
+    const cos = qEmb && Array.isArray(t.emb) ? cosine(qEmb, t.emb) : 0;
+    const kw = (bm[j] ?? 0) / bmMax;
+    // Embeddings carry most of the weight when present; keywords rescue exact
+    // names, numbers and rare terms that embeddings blur.
+    let s = qEmb ? 0.75 * cos + 0.25 * kw : kw;
+    if (s <= (qEmb ? 0.3 : 0.1)) return;
+    if (t.role === 'fact') s *= FACT_BOOST;
+    scored.push({ i, s });
+  });
+  scored.sort((a, b) => b.s - a.s);
+  const top = scored.slice(0, k);
+  if (!top.length) return { blocks: [], hits: 0, chars: 0 };
+
+  // Expand each hit with neighbours from the same session (file order = time order).
+  const pick = new Map<number, boolean>(); // index -> isHit
+  for (const { i } of top) {
+    pick.set(i, true);
+    for (let d = 1; d <= nb; d++) {
+      for (const j of [i - d, i + d]) {
+        const t = all[j];
+        if (t && t.session === at(i).session && t.session !== currentSession && !pick.has(j)) pick.set(j, false);
+      }
+    }
+  }
+
+  // Budget: keep hits in score order first, then neighbours, until full.
+  const rank = new Map(top.map(({ i }, r) => [i, r]));
+  const order = [...pick.keys()].sort((a, b) => {
+    const ra = rank.get(a) ?? Infinity;
+    const rb = rank.get(b) ?? Infinity;
+    if (ra !== rb) return ra - rb;
+    return a - b;
+  });
+  const kept = new Set<number>();
+  let chars = 0;
+  for (const i of order) {
+    const len = Math.min(at(i).content.length, rowCap);
+    if (chars + len > budget && kept.size) continue;
+    kept.add(i);
+    chars += len;
+  }
+
+  const bySession = new Map<string, number[]>();
+  for (const i of [...kept].sort((a, b) => a - b)) {
+    const s = at(i).session;
+    if (!bySession.has(s)) bySession.set(s, []);
+    bySession.get(s)!.push(i);
+  }
+  const blocks: ContextBlock[] = [...bySession.entries()].map(([session, idx]) => ({
+    session,
+    ts: Math.min(...idx.map((i) => at(i).ts)),
+    rows: idx.map((i) => ({
+      role: at(i).role,
+      content: at(i).content.length > rowCap ? at(i).content.slice(0, rowCap) + ' …' : at(i).content,
+      ts: at(i).ts,
+      hit: !!pick.get(i),
+    })),
+  }));
+  blocks.sort((a, b) => a.ts - b.ts);
+  return { blocks, hits: top.length, chars };
+}
+
+const isoDay = (ts: number): string => {
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return 'unknown date';
+  }
+};
+
+/** Render recallContext() output as a dated, oldest-first notes block. */
+export function formatMemoryContext(ctx: MemoryContext, now: Date | string = new Date()): string {
+  if (!ctx.blocks.length) return '';
+  const today = typeof now === 'string' ? now : isoDay(now.getTime());
+  const out: string[] = [
+    `Today is ${today}. Notes from this user's earlier sessions follow, oldest first, each with its date.`,
+    'If notes disagree, the most recent one is current. Work out dates and durations from the session dates.',
+  ];
+  for (const b of ctx.blocks) {
+    out.push('', `### Session on ${isoDay(b.ts)}`);
+    for (const r of b.rows) {
+      const who = r.role === 'user' ? 'User' : r.role === 'assistant' ? 'Assistant' : 'Fact';
+      out.push(`${who}: ${r.content.trim()}`);
+    }
+  }
+  return out.join('\n');
+}
