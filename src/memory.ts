@@ -557,12 +557,17 @@ function bm25Scores(query: Set<string>, docs: string[]): number[] {
 export async function recallContext(
   query: string,
   currentSession: string,
-  opts: { k?: number; neighbors?: number; budget?: number; rowCap?: number } = {},
+  opts: { k?: number; neighbors?: number; budget?: number; rowCap?: number; neighborCap?: number; userBoost?: number } = {},
 ): Promise<MemoryContext> {
-  const k = opts.k ?? envNum('HOLT_RECALL_K', 16);
+  const k = opts.k ?? envNum('HOLT_RECALL_K', 32);
   const nb = opts.neighbors ?? envNum('HOLT_RECALL_NEIGHBORS', 1);
   const budget = opts.budget ?? envNum('HOLT_RECALL_BUDGET', 24000);
   const rowCap = opts.rowCap ?? envNum('HOLT_RECALL_ROWCAP', 2000);
+  // Rows pulled in only as neighbours of a hit get a shorter cap: they are there
+  // for context, and long assistant replies would otherwise crowd out the user's
+  // own statements, which is where facts about the user live.
+  const neighborCap = opts.neighborCap ?? envNum('HOLT_RECALL_NEIGHBOR_CAP', 250);
+  const userBoost = opts.userBoost ?? envNum('HOLT_RECALL_USER_BOOST', 1.15);
 
   const all = loadTurns();
   const at = (i: number): MemTurn => all[i] as MemTurn;
@@ -587,6 +592,7 @@ export async function recallContext(
     let s = qEmb ? 0.75 * cos + 0.25 * kw : kw;
     if (s <= (qEmb ? 0.3 : 0.1)) return;
     if (t.role === 'fact') s *= FACT_BOOST;
+    else if (t.role === 'user') s *= userBoost;
     scored.push({ i, s });
   });
   scored.sort((a, b) => b.s - a.s);
@@ -615,8 +621,9 @@ export async function recallContext(
   });
   const kept = new Set<number>();
   let chars = 0;
+  const capOf = (i: number): number => (pick.get(i) ? rowCap : neighborCap);
   for (const i of order) {
-    const len = Math.min(at(i).content.length, rowCap);
+    const len = Math.min(at(i).content.length, capOf(i));
     if (chars + len > budget && kept.size) continue;
     kept.add(i);
     chars += len;
@@ -633,7 +640,7 @@ export async function recallContext(
     ts: Math.min(...idx.map((i) => at(i).ts)),
     rows: idx.map((i) => ({
       role: at(i).role,
-      content: at(i).content.length > rowCap ? at(i).content.slice(0, rowCap) + ' …' : at(i).content,
+      content: at(i).content.length > capOf(i) ? at(i).content.slice(0, capOf(i)) + ' …' : at(i).content,
       ts: at(i).ts,
       hit: !!pick.get(i),
     })),
@@ -657,6 +664,7 @@ export function formatMemoryContext(ctx: MemoryContext, now: Date | string = new
   const out: string[] = [
     `Today is ${today}. Notes from this user's earlier sessions follow, oldest first, each with its date.`,
     'If notes disagree, the most recent one is current. Work out dates and durations from the session dates.',
+    'To count or total something, first list every matching item across all sessions, then answer. If the notes do not cover it, say so.',
   ];
   for (const b of ctx.blocks) {
     out.push('', `### Session on ${isoDay(b.ts)}`);
