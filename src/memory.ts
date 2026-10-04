@@ -559,9 +559,9 @@ export async function recallContext(
   currentSession: string,
   opts: { k?: number; neighbors?: number; budget?: number; rowCap?: number } = {},
 ): Promise<MemoryContext> {
-  const k = opts.k ?? envNum('HOLT_RECALL_K', 10);
+  const k = opts.k ?? envNum('HOLT_RECALL_K', 16);
   const nb = opts.neighbors ?? envNum('HOLT_RECALL_NEIGHBORS', 1);
-  const budget = opts.budget ?? envNum('HOLT_RECALL_BUDGET', 16000);
+  const budget = opts.budget ?? envNum('HOLT_RECALL_BUDGET', 24000);
   const rowCap = opts.rowCap ?? envNum('HOLT_RECALL_ROWCAP', 2000);
 
   const all = loadTurns();
