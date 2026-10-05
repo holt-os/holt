@@ -570,6 +570,20 @@ export async function recallContext(
   const userBoost = opts.userBoost ?? envNum('HOLT_RECALL_USER_BOOST', 1.15);
 
   const all = loadTurns();
+  // Folders opted into global memory also search the shared fact store, as
+  // recall() does. Each source folder becomes its own pseudo-session so
+  // neighbour expansion never crosses folders. Our own rows are already local.
+  try {
+    const ws = workspace();
+    if (isGlobalEnabled(ws)) {
+      for (const g of loadGlobalFacts()) {
+        if (g.workspace === ws) continue;
+        all.push({ id: g.id, ts: g.ts, session: `global:${g.workspace}`, role: g.role, content: g.content, emb: g.emb });
+      }
+    }
+  } catch {
+    // a missing or corrupt global store degrades to local-only recall
+  }
   const at = (i: number): MemTurn => all[i] as MemTurn;
   const pastIdx: number[] = [];
   all.forEach((t, i) => {

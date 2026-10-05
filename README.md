@@ -179,6 +179,12 @@ Turns saved before semantic memory was enabled are upgraded in one pass with `ho
 
 Long conversations stay cheap: only recent turns are replayed verbatim, older context comes back through recall.
 
+### How recall works, and how well
+
+Each message is matched against your past sessions by meaning (local embeddings) and by exact words (BM25), so names, numbers and rare terms are not lost. Holt takes the best 32 matches, adds the message next to each one in short form, groups them by session, dates every session and orders them oldest first. Your own statements get a slight edge, because that is where facts about you live. The whole block stays inside a fixed budget of about 6,000 tokens. Tune it with `HOLT_RECALL_K`, `HOLT_RECALL_BUDGET`, `HOLT_RECALL_NEIGHBORS`, `HOLT_RECALL_NEIGHBOR_CAP` and `HOLT_RECALL_USER_BOOST`.
+
+On the public long-term memory benchmarks, Holt 0.19 scores 91.2% on LongMemEval (graded by GPT-4o), 88.2% on LoCoMo and 79.6% on BEAM at one million tokens. Every question, answer and grade, plus the code to rerun it, is in [holt-os/holt-benchmarks](https://github.com/holt-os/holt-benchmarks).
+
 ### Optional global memory (`holt memory global`)
 
 By default every folder's memory is **isolated**: recall never crosses folders. If you want a folder to draw on what you learned elsewhere, opt it into a shared store:

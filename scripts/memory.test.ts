@@ -11,6 +11,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 process.env.HOLT_OLLAMA_URL = 'http://127.0.0.1:9';
+// Point the global store at a throwaway HOME so the real ~/.holt is never touched.
+const fakeHome = mkdtempSync(join(tmpdir(), 'holt-home-'));
+process.env.HOME = fakeHome;
 const { recallContext, formatMemoryContext } = await import('../src/memory');
 
 let passed = 0;
@@ -67,6 +70,21 @@ try {
     assert.match(text, /12 kg/);
   });
 
+  await check('global facts from other folders are recalled when the folder opts in', async () => {
+    const realDir = process.cwd();
+    mkdirSync(join(fakeHome, '.holt', 'global'), { recursive: true });
+    writeFileSync(join(fakeHome, '.holt', 'memory-scopes.json'), JSON.stringify({ enabled: [realDir] }));
+    writeFileSync(
+      join(fakeHome, '.holt', 'global', 'turns.jsonl'),
+      JSON.stringify({ id: 'g1', ts: day('2026-02-01'), session: 'x', role: 'fact', content: 'Pepper the beagle is allergic to chicken.', workspace: '/some/other/folder' }) + '\n',
+    );
+    const ctx = await recallContext('Pepper beagle allergic chicken', 'now', { k: 5 });
+    assert.ok(ctx.blocks.some((b) => b.session === 'global:/some/other/folder'), 'expected the global fact');
+    writeFileSync(join(fakeHome, '.holt', 'memory-scopes.json'), JSON.stringify({ enabled: [] }));
+    const off = await recallContext('Pepper beagle allergic chicken', 'now', { k: 5 });
+    assert.ok(!off.blocks.some((b) => b.session.startsWith('global:')), 'global must stay off when not opted in');
+  });
+
   await check('empty store gives empty context and empty text', async () => {
     const ctx = await recallContext('anything at all', 's1-only-session-that-does-not-exist', { k: 3 });
     assert.equal(formatMemoryContext({ blocks: [], hits: 0, chars: 0 }), '');
@@ -75,5 +93,6 @@ try {
 } finally {
   process.chdir(prevCwd);
   rmSync(dir, { recursive: true, force: true });
+  rmSync(fakeHome, { recursive: true, force: true });
 }
 console.log(`\n${passed} passed`);
