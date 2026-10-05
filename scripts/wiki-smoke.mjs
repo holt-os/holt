@@ -112,10 +112,10 @@ async function main() {
 
   // Two topic clusters + one near-duplicate of cluster A (should route to A, not dup).
   await seedFacts([
-    ['f1aaaaaa', 'Debashis is targeting the Netherlands as his primary job market via the HSM visa route.'],
-    ['f2bbbbbb', 'The Netherlands 30 percent ruling gives a tax advantage to skilled migrants.'],
-    ['f3cccccc', 'Astrika is a Jyotish SaaS with a backend on Hetzner and a frontend on Vercel.'],
-    ['f4dddddd', 'Astrika uses Razorpay for live payments and has an admin secret for the credits API.'],
+    ['f1aaaaaa', 'Alex is targeting Portugal as the primary relocation market via the digital nomad visa route.'],
+    ['f2bbbbbb', 'The Portugal IFICI tax regime gives a tax advantage to skilled newcomers.'],
+    ['f3cccccc', 'Northwind is a recipe SaaS with a backend on a VPS and a frontend on a CDN.'],
+    ['f4dddddd', 'Northwind uses Stripe for live payments and has an admin key for the billing API.'],
   ]);
 
   // ===== config migration v4 -> v5 (via memory command, which loads config) =====
@@ -152,8 +152,8 @@ async function main() {
   // ===== (a cont.) second sync integrates a NEW near-duplicate fact; no dup page =====
   // Append a near-duplicate of the NL cluster with a newer ts so it is "fresh".
   const existing = readFileSync(join(WS, '.holt', 'memory', 'turns.jsonl'), 'utf8').trimEnd();
-  const dupEmb = await embed('The Netherlands remains the main job-search target using the highly skilled migrant visa.');
-  const newRow = factRow('f5eeeeee', 'The Netherlands remains the main job-search target using the highly skilled migrant visa.', dupEmb, Date.now() + 5000);
+  const dupEmb = await embed('Portugal remains the main relocation target using the digital nomad visa.');
+  const newRow = factRow('f5eeeeee', 'Portugal remains the main relocation target using the digital nomad visa.', dupEmb, Date.now() + 5000);
   writeFileSync(join(WS, '.holt', 'memory', 'turns.jsonl'), existing + '\n' + newRow + '\n');
 
   const sync2 = runCli(['wiki', 'sync']);
@@ -247,7 +247,7 @@ async function main() {
   check('graph --wiki on empty wiki does not crash', graphEmptyWiki.status === 0, graphEmptyWiki.stderr.trim());
 
   // ===== recall integration: wiki content is searchable =====
-  const search = runCli(['memory', 'search', 'Netherlands job market visa']);
+  const search = runCli(['memory', 'search', 'Portugal relocation visa']);
   check('wiki content is recallable via memory search', search.status === 0 && search.stdout.length > 0, search.stderr.trim());
 
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'}`);

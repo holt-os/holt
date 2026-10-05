@@ -83,7 +83,7 @@ holt memory add "<one durable fact>"
 One fact per call. Several facts can be piped in at once, one per line.
 
 Write facts that will still be true in a month and that a future session could
-not guess. "Runs product for a fintech in Bhubaneswar, nine years in" is a fact.
+not guess. "Runs design for a logistics startup in Lisbon, six years in" is a fact.
 "Wants to be more productive" is noise. Include names, numbers, and dates. Write
 the fact so it stands alone, because recall will surface it without this
 conversation around it.
@@ -120,6 +120,6 @@ things genuinely in flight this week?"
 Then, quietly, between questions:
 
 ```
-holt memory add "Senior product manager, nine years, currently between roles and job-hunting in the Netherlands"
-holt memory add "Runs Sasyam Agro with an uncle in Bargarh; demo plots are on the uncle's land"
+holt memory add "Product designer, six years, leading the checkout redesign at a logistics startup"
+holt memory add "Runs a weekend pottery studio with a cousin; classes are on Saturday mornings"
 ```
