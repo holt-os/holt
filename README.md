@@ -647,4 +647,6 @@ Holt is built to be extended without touching the core. See [`CONTRIBUTING.md`](
 
 ## License
 
-[MIT](./LICENSE) © Debashis Nayak
+[MIT](./LICENSE) © [Debashis Nayak](https://productsdecoded.com/about)
+
+Built by [Debashis Nayak](https://productsdecoded.com/about).
