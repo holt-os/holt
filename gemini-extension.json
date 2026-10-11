@@ -1,0 +1,13 @@
+{
+  "name": "holt",
+  "version": "0.19.1",
+  "description": "Private, local memory for Gemini CLI. Holt remembers facts per project folder and recalls them in later sessions. Nothing leaves your machine.",
+  "mcpServers": {
+    "holt": {
+      "command": "npx",
+      "args": ["-y", "@holt-os/holt", "mcp"],
+      "cwd": "${workspacePath}"
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}

@@ -43,11 +43,11 @@ if git rev-parse "v${next}" >/dev/null 2>&1; then
 fi
 
 # Restore the version files if anything below fails before we commit.
-restore() { git checkout -- package.json src/version.ts 2>/dev/null || true; }
+restore() { git checkout -- package.json src/version.ts gemini-extension.json 2>/dev/null || true; }
 trap restore ERR
 
-# Bump the two version sites.
-node -e "const f='package.json',j=require('./'+f);j.version='${next}';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+# Bump the three version sites.
+for f in package.json gemini-extension.json; do node -e "const f='$f',j=require('./'+f);j.version='${next}';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"; done
 tmp=$(mktemp)
 sed -E "s/export const VERSION = '.*';/export const VERSION = '${next}';/" src/version.ts > "$tmp" && mv "$tmp" src/version.ts
 
@@ -61,7 +61,7 @@ fi
 
 trap - ERR
 
-git add package.json src/version.ts
+git add package.json src/version.ts gemini-extension.json
 git commit -m "Release v${next}"
 git tag "v${next}"
 git push origin main
