@@ -7,6 +7,7 @@
   <a href="https://github.com/holt-os/homebrew-tap"><img src="https://img.shields.io/badge/brew-holt--os%2Ftap%2Fholt-f5a623?logo=homebrew&logoColor=white" alt="Homebrew tap"></a>
   <img src="https://img.shields.io/node/v/@holt-os/holt?logo=node.js&logoColor=white&color=3c873a" alt="Node version">
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-ready-4dd0e1?logo=modelcontextprotocol&logoColor=white" alt="MCP ready"></a>
+  <a href="https://yourstory.com/cs/uploads/Vibecode30-Report-2026-1791951345453.pdf"><img src="https://img.shields.io/badge/VibeCode30%202026-winner-e8a33d" alt="VibeCode30 2026 winner"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
