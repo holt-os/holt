@@ -24,38 +24,10 @@
  */
 import { execFileSync } from 'node:child_process';
 import { basename } from 'node:path';
+import { readStdin } from '../stdin';
 
 /** Middle dot (U+00B7) separator. Deliberately NOT an em-dash. */
 const SEP = ' · ';
-
-/**
- * Read all of STDIN with a hard timeout so the status-line command never hangs a
- * render. Mirrors the readStdin pattern in src/commands/hook.ts. Resolves with
- * whatever was buffered when stdin ends, errors, or the timeout fires. When no
- * stdin is piped (e.g. `</dev/null`), 'end' fires immediately so we return ''.
- */
-function readStdin(timeoutMs: number): Promise<string> {
-  return new Promise((resolve) => {
-    let input = '';
-    let done = false;
-    const finish = (): void => {
-      if (done) return;
-      done = true;
-      resolve(input);
-    };
-    try {
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => {
-        input += chunk;
-      });
-      process.stdin.on('end', finish);
-      process.stdin.on('error', finish);
-    } catch {
-      finish();
-    }
-    setTimeout(finish, timeoutMs);
-  });
-}
 
 /** A plain object index accessor that never throws and tolerates non-objects. */
 function get(obj: unknown, key: string): unknown {

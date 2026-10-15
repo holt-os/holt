@@ -41,6 +41,7 @@ import { recallContext, formatMemoryContext, memDir, newSessionId } from '../mem
 import { extractAndSaveFacts, MIN_EXCHANGES_FOR_EXTRACTION } from '../facts';
 import { syncWiki, resolveBrainMaintainer, wikiDir } from '../wiki';
 import { c } from '../ui';
+import { readStdin } from '../stdin';
 
 // ---- shape of the two hooks we manage ---------------------------------------
 
@@ -275,30 +276,6 @@ function status(rest: string[]): void {
 }
 
 // ---- runtime: read the hook JSON off stdin ----------------------------------
-
-/** Read all of stdin with a hard timeout so a hook never hangs Claude Code. */
-function readStdin(timeoutMs: number): Promise<string> {
-  return new Promise((resolve) => {
-    let input = '';
-    let done = false;
-    const finish = (): void => {
-      if (done) return;
-      done = true;
-      resolve(input);
-    };
-    try {
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => {
-        input += chunk;
-      });
-      process.stdin.on('end', finish);
-      process.stdin.on('error', finish);
-    } catch {
-      finish();
-    }
-    setTimeout(finish, timeoutMs);
-  });
-}
 
 interface HookInput {
   prompt?: string;
