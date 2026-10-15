@@ -211,6 +211,17 @@ function parse(raw: string): unknown {
 }
 
 /**
+ * True when a project `statusLine` is the static `printf "Holt"` that Holt
+ * itself wrote before the `holt statusline` renderer existed. Launch treats it as
+ * Holt-owned and upgrades it; any other statusLine is the user's and is left alone.
+ */
+export function isLegacyHoltStatusLine(statusLine: unknown): boolean {
+  if (!statusLine || typeof statusLine !== 'object') return false;
+  const cmd = (statusLine as { command?: unknown }).command;
+  return typeof cmd === 'string' && /^printf\s+["']Holt["']$/.test(cmd.trim());
+}
+
+/**
  * The command body. Reads the status JSON off stdin, prints exactly one line.
  * Never throws: any failure degrades to the bare `Holt` marker.
  */

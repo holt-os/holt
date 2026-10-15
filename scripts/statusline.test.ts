@@ -3,7 +3,7 @@
  * Run with: npx tsx scripts/statusline.test.ts
  */
 import assert from 'node:assert/strict';
-import { renderStatusLine, contextBar } from '../src/commands/statusline';
+import { renderStatusLine, contextBar, isLegacyHoltStatusLine } from '../src/commands/statusline';
 
 let passed = 0;
 function check(name: string, fn: () => void): void {
@@ -22,6 +22,14 @@ check('empty / malformed payloads degrade to the bare marker', () => {
   assert.equal(renderStatusLine({}), 'Holt');
   assert.equal(renderStatusLine(null), 'Holt');
   assert.equal(renderStatusLine('garbage'), 'Holt');
+});
+
+check('only the legacy static Holt line counts as Holt-owned', () => {
+  assert.equal(isLegacyHoltStatusLine({ type: 'command', command: 'printf "Holt"' }), true);
+  assert.equal(isLegacyHoltStatusLine({ type: 'command', command: "printf 'Holt'" }), true);
+  assert.equal(isLegacyHoltStatusLine({ type: 'command', command: '/opt/homebrew/bin/holt statusline' }), false);
+  assert.equal(isLegacyHoltStatusLine({ type: 'command', command: 'sh ~/.claude/statusline-command.sh' }), false);
+  assert.equal(isLegacyHoltStatusLine(undefined), false);
 });
 
 check('full payload renders folder, branch, model and context bar', () => {

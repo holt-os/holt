@@ -35,6 +35,7 @@ import { memDir } from '../memory';
 import { resolveHoltPath } from '../scheduler';
 import { syncSkillCommands } from '../skillcompiler';
 import { hook } from './hook';
+import { isLegacyHoltStatusLine } from './statusline';
 import { chat } from './chat';
 import { init } from './init';
 import { c, createReader } from '../ui';
@@ -73,9 +74,8 @@ const TIPS: string[] = [
  * resolved active brain's label; it shows in the context line so the user knows
  * what is actually running under Holt.
  *
- * Layout (light box-drawing set):
+ * Layout: the amber block-letter WORDMARK, then the box (light box-drawing set):
  *   ┌──────────────────────────────────────────────┐
- *   │  HOLT                                          │
  *   │  Holt: your assistant, with memory that lasts. │
  *   │                                                │
  *   │  Running <brain> as Holt. Memory is on ...     │
@@ -85,17 +85,26 @@ const TIPS: string[] = [
  *   └──────────────────────────────────────────────┘
  *
  * Width is derived from the longest line so the border always fits. The wordmark
- * is amber; borders and tips are dim so the box stays quiet.
+ * above is amber; borders and tips are dim so the box stays quiet.
  */
+/** The big block-letter wordmark printed above the box, amber, like the help banner. */
+const WORDMARK: string[] = [
+  '██╗  ██╗ ██████╗ ██╗  ████████╗',
+  '██║  ██║██╔═══██╗██║  ╚══██╔══╝',
+  '███████║██║   ██║██║     ██║',
+  '██╔══██║██║   ██║██║     ██║',
+  '██║  ██║╚██████╔╝███████╗██║',
+  '╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝',
+];
+
 function renderIntroBox(): string {
-  const wordmark = 'HOLT';
   // Deliberately does NOT name the underlying brain: the whole point is that this
   // reads as Holt, whichever agent (Claude Code / Codex / Gemini) is underneath.
   const context = 'Your assistant is ready. Memory is on for this folder.';
   const bullets = TIPS.map((t) => `• ${t}`);
 
   // The plain-text content lines (no color), used to size the box.
-  const content: string[] = [wordmark, TAGLINE, '', context, '', ...bullets];
+  const content: string[] = [TAGLINE, '', context, '', ...bullets];
 
   const pad = 2; // spaces of inner left/right padding
   const inner = Math.max(...content.map((l) => l.length));
@@ -112,9 +121,9 @@ function renderIntroBox(): string {
     return c.dim('│') + body + c.dim('│');
   };
 
-  const lines: string[] = [];
+  const lines: string[] = WORDMARK.map((l) => ' ' + c.accent(l));
+  lines.push('');
   lines.push(c.dim(top));
-  lines.push(row(wordmark, c.accent));
   lines.push(row(TAGLINE, c.dim));
   lines.push(row(''));
   lines.push(row(context, c.dim));
@@ -223,7 +232,8 @@ function brandContextFile(id: BrainId): string | null {
  * line working even when Claude Code renders under a reduced PATH.
  *
  * Non-destructive:
- *  - never overwrites an existing statusLine the user already set;
+ *  - never overwrites an existing statusLine the user already set (the legacy
+ *    `printf "Holt"` from older Holt versions is ours, so it gets upgraded);
  *  - backs up the file before writing;
  *  - preserves all other settings (including the Holt hooks we just installed).
  * Best-effort: any failure is swallowed. Returns true if it wrote a status line.
@@ -240,7 +250,8 @@ function brandStatusLine(): boolean {
     // Malformed settings.json is the user's; do not touch it.
     return false;
   }
-  if (settings.statusLine) return false; // respect an existing one
+  // Respect an existing one, except the static line older Holt versions wrote.
+  if (settings.statusLine && !isLegacyHoltStatusLine(settings.statusLine)) return false;
 
   try {
     if (existsSync(path)) copyFileSync(path, `${path}.holt-bak`);
