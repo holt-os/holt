@@ -1,6 +1,6 @@
 {
   "name": "holt",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "description": "Private, local memory for Gemini CLI. Holt remembers facts per project folder and recalls them in later sessions. Nothing leaves your machine.",
   "mcpServers": {
     "holt": {
