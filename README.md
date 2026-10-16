@@ -53,6 +53,12 @@ Set up Holt for me: read https://raw.githubusercontent.com/holt-os/holt/main/doc
 
 It installs Holt, checks its own work, and fixes what breaks. Full detail, system requirements, and troubleshooting: [docs/INSTALL.md](./docs/INSTALL.md).
 
+**Using Gemini CLI?** Install Holt as an extension and Gemini gets local, per-folder memory (no separate install needed):
+
+```bash
+gemini extensions install https://github.com/holt-os/holt
+```
+
 ## Quickstart
 
 ```bash
@@ -379,7 +385,7 @@ The default index is the community registry (`https://raw.githubusercontent.com/
 
 ## Use Holt from your other tools (MCP)
 
-Holt can run as an [MCP](https://modelcontextprotocol.io) server, so Claude Code, Cursor, and Codex can recall and remember from Holt's memory for the folder without leaving those tools.
+Holt can run as an [MCP](https://modelcontextprotocol.io) server, so Claude Code, Gemini CLI, Cursor, and Codex can recall and remember from Holt's memory for the folder without leaving those tools.
 
 ```bash
 holt mcp        # run the MCP server for the current folder (talks JSON-RPC over stdio)
@@ -400,6 +406,12 @@ Tools it exposes:
 
 ```bash
 claude mcp add holt -- holt mcp
+```
+
+**Gemini CLI**
+
+```bash
+gemini extensions install https://github.com/holt-os/holt
 ```
 
 **Cursor / Codex** (JSON config):
