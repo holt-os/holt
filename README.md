@@ -314,6 +314,8 @@ holt skill publish [<name>]            prepare a skill for the registry (prints 
 holt skill remove <name>               delete a skill
 ```
 
+Porting skills to another agent, or wiring up a new brain: see [docs/porting-skills-to-other-agents.md](./docs/porting-skills-to-other-agents.md).
+
 A source may carry a `#<subdir>` suffix (split on the first `#`) that points at one skill folder inside a repo or path: `holt skill add https://github.com/holt-os/registry#skills/pm-prd`. The subdir is a path, relative to the source root, that contains a `SKILL.md`. This lets a single repo hold many skills (one monorepo), which is exactly how the community registry is laid out. The subdir is validated to stay inside the source (absolute paths and `..` traversal are refused), since a registry entry is remote-controlled. Without a `#`, behaviour is unchanged: Holt looks for a `SKILL.md` at the source root or in exactly one immediate subfolder.
 
 In chat, run one with `/skill <name> [your input]`. Available skills are also listed to the brain each turn, so it knows what it can be asked to follow.
