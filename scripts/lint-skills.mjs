@@ -21,7 +21,7 @@ for (const s of skills) {
   if (!fm.data.version) errors.push(`${tag}: frontmatter "version" is missing`);
   else if (!SEMVER.test(fm.data.version)) errors.push(`${tag}: version "${fm.data.version}" is not x.y.z`);
   if (!fm.body.trim()) errors.push(`${tag}: empty body`);
-  if (s.raw.includes('\\u2014')) errors.push(`${tag}: contains an em-dash`);
+  if (s.raw.includes('\u2014')) errors.push(`${tag}: contains an em-dash`);
 
   // Referenced files: markdown links to relative targets, and backticked paths
   // that start with a known resource folder or ./
