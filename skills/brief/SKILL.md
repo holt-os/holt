@@ -1,6 +1,7 @@
 ---
 name: brief
 description: A short briefing on the state of the current folder, using recalled memory plus the user's input. Use to get oriented fast.
+version: 1.0.0
 ---
 
 # brief

@@ -1,6 +1,7 @@
 ---
 name: explain-code
 description: Walk through what a file or function does and how it fits into the wider system. Use to onboard onto unfamiliar code.
+version: 1.0.0
 ---
 
 # explain-code

@@ -13,6 +13,7 @@ config.yml
 .env
 .env.*
 *.local
+.claude/settings.local.json
 data/
 *.db
 *.sqlite

@@ -1,6 +1,7 @@
 ---
 name: action-items
 description: Pull decisions, tasks, and owners out of messy notes or a meeting transcript. Use to turn a raw log into a clean follow-up list.
+version: 1.0.0
 ---
 
 # action-items

@@ -1,6 +1,7 @@
 ---
 name: explain
 description: Explain a concept, error message, or piece of jargon in plain language. Use when the user wants to understand something unfamiliar.
+version: 1.0.0
 ---
 
 # explain

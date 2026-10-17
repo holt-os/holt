@@ -1,6 +1,7 @@
 ---
 name: decide
 description: Weigh a decision and give a clear recommendation. Use when the user is stuck between options and wants a reasoned call.
+version: 1.0.0
 ---
 
 # decide

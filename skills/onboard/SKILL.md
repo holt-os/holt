@@ -1,6 +1,7 @@
 ---
 name: onboard
 description: A guided first-day interview that fills Holt's memory with who you are and what you are working on, so recall is useful from day one instead of after weeks of use. Use on a fresh folder, or to top up a thin memory.
+version: 1.0.0
 ---
 
 # onboard

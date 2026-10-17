@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: Review a file or a diff for correctness bugs, edge cases, and simplifications. Use before merging or when a change feels risky.
+version: 1.0.0
 ---
 
 # code-review

@@ -1,6 +1,7 @@
 ---
 name: plan
 description: Break a goal into a concrete, ordered set of steps. Use when a task is big enough to need sequencing before starting.
+version: 1.0.0
 ---
 
 # plan

@@ -1,6 +1,7 @@
 ---
 name: audit
 description: A read-only health check of your Holt setup across the four rungs (Know, Reach, Do, Run), naming the gaps and the single next thing to fix. Use weekly, or when Holt feels less useful than expected.
+version: 1.0.0
 ---
 
 # audit

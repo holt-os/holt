@@ -1,6 +1,7 @@
 ---
 name: summarize
 description: Condense a document, article, transcript, or pasted text into its key points. Use when the input is long and the user wants the gist fast.
+version: 1.0.0
 ---
 
 # summarize

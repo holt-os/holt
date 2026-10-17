@@ -1,6 +1,7 @@
 ---
 name: level-up
 description: A weekly working session that turns one piece of recurring manual work into something Holt does for you, and ships it before the session ends. Use as a standing ritual once memory has real facts in it.
+version: 1.0.0
 ---
 
 # level-up

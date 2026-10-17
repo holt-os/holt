@@ -1,6 +1,7 @@
 ---
 name: rewrite
 description: Tighten and clarify a piece of text without changing its meaning. Use for a neutral clarity pass on text the user provides.
+version: 1.0.0
 ---
 
 # rewrite

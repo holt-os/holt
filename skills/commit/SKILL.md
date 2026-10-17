@@ -1,6 +1,7 @@
 ---
 name: commit
 description: Draft a clear commit message from staged changes or a described change. Use when you want a clean, conventional message.
+version: 1.0.0
 ---
 
 # commit
