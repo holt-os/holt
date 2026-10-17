@@ -8,7 +8,7 @@ export const SKILLS_DIR = join(ROOT, 'skills');
 
 /** Strict frontmatter parse. Returns { ok, error, data, body }. */
 export function parseStrict(md) {
-  const lines = md.replace(/^﻿/, '').split('\n');
+  const lines = md.replace(/^\uFEFF/, '').split('\n');
   if (lines[0].trim() !== '---') return { ok: false, error: 'no opening --- fence on line 1', data: {}, body: md };
   const data = {};
   let i = 1;
