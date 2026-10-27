@@ -6,7 +6,7 @@
  * deterministic on any machine.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -14,7 +14,7 @@ process.env.HOLT_OLLAMA_URL = 'http://127.0.0.1:9';
 // Point the global store at a throwaway HOME so the real ~/.holt is never touched.
 const fakeHome = mkdtempSync(join(tmpdir(), 'holt-home-'));
 process.env.HOME = fakeHome;
-const { recallContext, formatMemoryContext } = await import('../src/memory');
+const { recallContext, formatMemoryContext, loadTurns, appendTurn, clearMemory } = await import('../src/memory');
 
 let passed = 0;
 async function check(name: string, fn: () => Promise<void>): Promise<void> {
@@ -83,6 +83,53 @@ try {
     writeFileSync(join(fakeHome, '.holt', 'memory-scopes.json'), JSON.stringify({ enabled: [] }));
     const off = await recallContext('Pepper beagle allergic chicken', 'now', { k: 5 });
     assert.ok(!off.blocks.some((b) => b.session.startsWith('global:')), 'global must stay off when not opted in');
+  });
+
+  await check('read index returns exactly what turns.jsonl holds, embeddings included', async () => {
+    appendTurn({ id: 'e1', ts: day('2026-03-11'), session: 's2', role: 'user', content: 'Pepper got a red collar.', emb: [0.1234, -0.5678, 0.0001] });
+    const direct = readFileSync(join(dir, '.holt', 'memory', 'turns.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const built = loadTurns(); // builds the index
+    const fromIdx = loadTurns(); // reads it back
+    assert.ok(existsSync(join(dir, '.holt', 'memory', 'index', 'head.json')));
+    assert.deepEqual(JSON.parse(JSON.stringify(built)), direct);
+    assert.deepEqual(JSON.parse(JSON.stringify(fromIdx)), direct);
+    assert.deepEqual(fromIdx.find((t) => t.id === 'e1')?.emb, [0.1234, -0.5678, 0.0001]);
+  });
+
+  await check('an append is folded into the index without a rebuild', async () => {
+    const head = () => JSON.parse(readFileSync(join(dir, '.holt', 'memory', 'index', 'head.json'), 'utf8'));
+    const before = head();
+    appendTurn({ id: 'e2', ts: day('2026-03-12'), session: 's2', role: 'user', content: 'Pepper learned to sit.', emb: [0.5, 0.25, 0.125] });
+    assert.ok(loadTurns().some((t) => t.id === 'e2'));
+    const after = head();
+    assert.equal(after.gen, before.gen);
+    assert.equal(after.rows, before.rows + 1);
+    assert.deepEqual(loadTurns().find((t) => t.id === 'e2')?.emb, [0.5, 0.25, 0.125]);
+  });
+
+  await check('a rewrite rebuilds the index and leaves no copy of removed rows', async () => {
+    const file = join(dir, '.holt', 'memory', 'turns.jsonl');
+    const kept = readFileSync(file, 'utf8').trim().split('\n').filter((l) => !l.includes('red collar'));
+    writeFileSync(file, kept.join('\n') + '\n');
+    const turns = loadTurns();
+    assert.ok(!turns.some((t) => t.id === 'e1'));
+    assert.equal(turns.length, kept.length);
+    const idx = join(dir, '.holt', 'memory', 'index');
+    for (const f of readdirSync(idx)) assert.ok(!readFileSync(join(idx, f)).includes('red collar'), f + ' still holds removed text');
+  });
+
+  await check('rows read from the index can be edited and written back', async () => {
+    const t = loadTurns().find((x) => x.id === 'e2');
+    assert.ok(t);
+    t.emb = [1, 2, 3];
+    assert.deepEqual(JSON.parse(JSON.stringify(t)).emb, [1, 2, 3]);
+    assert.ok(Array.isArray(loadTurns().find((x) => x.id === 'a1')?.emb) === false);
+  });
+
+  await check('clearMemory removes the index too', async () => {
+    clearMemory();
+    assert.ok(!existsSync(join(dir, '.holt', 'memory', 'index')));
+    assert.deepEqual(loadTurns(), []);
   });
 
   await check('empty store gives empty context and empty text', async () => {

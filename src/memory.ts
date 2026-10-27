@@ -3,9 +3,22 @@
  * Recall works two ways: embeddings via a local Ollama if one is running (no keys,
  * fully private), otherwise a keyword overlap fallback. Zero dependencies.
  */
-import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import {
+  appendFileSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  openSync,
+  readSync,
+  closeSync,
+  renameSync,
+  readdirSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { wsHoltDir, workspace, GLOBAL_DIR } from './workspace';
 
 export interface MemTurn {
@@ -85,16 +98,259 @@ export async function embed(text: string): Promise<number[] | null> {
 
 export function loadTurns(): MemTurn[] {
   if (!existsSync(memPath())) return [];
+  try {
+    return loadIndexed(memPath());
+  } catch {
+    // any index problem falls back to reading turns.jsonl directly
+    return readJsonl(memPath(), 0, statSync(memPath()).size);
+  }
+}
+
+/** Parse JSONL rows in [start, end) without ever holding the file as one string. */
+function readJsonl(path: string, start: number, end: number): MemTurn[] {
   const out: MemTurn[] = [];
-  for (const line of readFileSync(memPath(), 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      out.push(JSON.parse(line) as MemTurn);
-    } catch {
-      // skip corrupt lines rather than losing the whole store
+  const fd = openSync(path, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(8 << 20);
+    let pos = start;
+    let carry: Buffer = Buffer.alloc(0);
+    const take = (line: Buffer): void => {
+      const s = line.toString('utf8');
+      if (!s.trim()) return;
+      try {
+        out.push(JSON.parse(s) as MemTurn);
+      } catch {
+        // skip corrupt lines rather than losing the whole store
+      }
+    };
+    while (pos < end) {
+      const n = readSync(fd, buf, 0, Math.min(buf.length, end - pos), pos);
+      if (n <= 0) break;
+      pos += n;
+      let chunk = carry.length ? Buffer.concat([carry, buf.subarray(0, n)]) : buf.subarray(0, n);
+      let nl: number;
+      while ((nl = chunk.indexOf(10)) !== -1) {
+        take(chunk.subarray(0, nl));
+        chunk = chunk.subarray(nl + 1);
+      }
+      carry = Buffer.from(chunk);
     }
+    if (carry.length) take(carry);
+  } finally {
+    closeSync(fd);
   }
   return out;
+}
+
+// ---- read index ----
+//
+// turns.jsonl stays the source of truth. Parsing it is most of recall's cost
+// (each embedding is ~768 numbers of JSON text), and hooks start a fresh
+// process per prompt, so loadTurns() keeps a derived index in memory/index/:
+// the rows without embeddings, the embeddings as raw float64 (exact), and each
+// row's BM25 token count. Appends are folded in incrementally; any other change
+// to turns.jsonl rebuilds it. It is always safe to delete.
+
+interface IdxHead {
+  v: number;
+  gen: string;
+  size: number;
+  mtimeMs: number;
+  tail: string;
+  rows: number;
+  rowsBytes: number;
+  embBytes: number;
+}
+
+const IDX_V = 1;
+const rowTokens = new WeakMap<MemTurn, number>();
+const rowVec = new WeakMap<MemTurn, Float64Array>();
+
+function idxDir(): string {
+  return join(memDir(), 'index');
+}
+
+function bm25Tokens(s: string): string[] {
+  return (s || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2);
+}
+
+/**
+ * Fingerprint of the bytes just before `end`, to tell an append from a rewrite.
+ * Includes whether they end in a newline: appending after a partial last line
+ * would change how that line parses, so it must rebuild.
+ */
+function tailHash(path: string, end: number): string {
+  const len = Math.min(4096, end);
+  const buf = Buffer.alloc(len);
+  const fd = openSync(path, 'r');
+  try {
+    readSync(fd, buf, 0, len, end - len);
+  } finally {
+    closeSync(fd);
+  }
+  return (buf.at(-1) === 10 ? 'nl:' : 'part:') + createHash('sha1').update(buf).digest('hex');
+}
+
+function readHead(): IdxHead | null {
+  try {
+    const h = JSON.parse(readFileSync(join(idxDir(), 'head.json'), 'utf8')) as IdxHead;
+    return h.v === IDX_V ? h : null;
+  } catch {
+    return null;
+  }
+}
+
+function readBytes(path: string, len: number): Buffer {
+  const buf = Buffer.alloc(len);
+  const fd = openSync(path, 'r');
+  try {
+    if (len && readSync(fd, buf, 0, len, 0) !== len) throw new Error('index truncated');
+  } finally {
+    closeSync(fd);
+  }
+  return buf;
+}
+
+function readIdx(h: IdxHead): MemTurn[] {
+  const d = idxDir();
+  const rows = readJsonl(join(d, `rows-${h.gen}.jsonl`), 0, h.rowsBytes);
+  const meta = new Uint32Array(readBytes(join(d, `meta-${h.gen}.u32`), h.rows * 8).buffer);
+  const emb = new Float64Array(readBytes(join(d, `emb-${h.gen}.f64`), h.embBytes).buffer);
+  if (rows.length !== h.rows) throw new Error('index row count mismatch');
+  let off = 0;
+  rows.forEach((r, i) => {
+    const dims = meta[i * 2] as number;
+    rowTokens.set(r, meta[i * 2 + 1] as number);
+    if (!dims) return;
+    // Recall scores straight from the float64 view; the number[] that callers
+    // see (and that gets written back to turns.jsonl) is only built if read.
+    const vec = emb.subarray(off, (off += dims));
+    rowVec.set(r, vec);
+    let arr: number[] | undefined;
+    Object.defineProperty(r, 'emb', {
+      enumerable: true,
+      configurable: true,
+      get: () => (arr ??= Array.from(vec)),
+      set: (v: number[] | undefined) => {
+        rowVec.delete(r);
+        Object.defineProperty(r, 'emb', { value: v, enumerable: true, writable: true, configurable: true });
+      },
+    });
+  });
+  if (off * 8 !== h.embBytes) throw new Error('index embedding size mismatch');
+  return rows;
+}
+
+/** Serialise rows into the three index parts. */
+function encodeIdx(rows: MemTurn[]): { rows: string; meta: Buffer; emb: Buffer } {
+  const meta = new Uint32Array(rows.length * 2);
+  let dims = 0;
+  for (const r of rows) dims += Array.isArray(r.emb) ? r.emb.length : 0;
+  const emb = new Float64Array(dims);
+  let off = 0;
+  const lines = rows.map((r, i) => {
+    const { emb: e, ...rest } = r;
+    if (Array.isArray(e)) {
+      emb.set(e, off);
+      off += e.length;
+      meta[i * 2] = e.length;
+    }
+    const n = bm25Tokens(r.content).length;
+    meta[i * 2 + 1] = n;
+    rowTokens.set(r, n);
+    return JSON.stringify(rest) + '\n';
+  });
+  return { rows: lines.join(''), meta: Buffer.from(meta.buffer), emb: Buffer.from(emb.buffer) };
+}
+
+function writeHead(h: IdxHead): void {
+  const tmp = join(idxDir(), `head.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify(h));
+  renameSync(tmp, join(idxDir(), 'head.json'));
+}
+
+/** One writer at a time; a reader that loses the race just skips the index update. */
+function lockIdx(): (() => void) | null {
+  const lock = join(idxDir(), 'lock');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      mkdirSync(idxDir(), { recursive: true });
+      const fd = openSync(lock, 'wx');
+      return () => {
+        closeSync(fd);
+        rmSync(lock, { force: true });
+      };
+    } catch {
+      try {
+        if (Date.now() - statSync(lock).mtimeMs < 30_000) return null;
+        rmSync(lock, { force: true }); // stale lock from a crashed process
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function loadIndexed(path: string): MemTurn[] {
+  const st = statSync(path);
+  const head = readHead();
+  if (head && head.size === st.size && head.mtimeMs === st.mtimeMs) return readIdx(head);
+
+  const unlock = lockIdx();
+  try {
+    const appended =
+      head && st.size > head.size && head.tail.startsWith('nl:') && tailHash(path, head.size) === head.tail;
+    if (head && appended) {
+      const base = readIdx(head);
+      const more = readJsonl(path, head.size, st.size);
+      if (unlock) {
+        const enc = encodeIdx(more);
+        const d = idxDir();
+        appendFileSync(join(d, `rows-${head.gen}.jsonl`), enc.rows);
+        appendFileSync(join(d, `meta-${head.gen}.u32`), enc.meta);
+        appendFileSync(join(d, `emb-${head.gen}.f64`), enc.emb);
+        writeHead({
+          ...head,
+          size: st.size,
+          mtimeMs: st.mtimeMs,
+          tail: tailHash(path, st.size),
+          rows: head.rows + more.length,
+          rowsBytes: head.rowsBytes + Buffer.byteLength(enc.rows),
+          embBytes: head.embBytes + enc.emb.length,
+        });
+      }
+      return base.concat(more);
+    }
+
+    const rows = readJsonl(path, 0, st.size);
+    if (unlock) {
+      const gen = randomUUID().slice(0, 8);
+      const d = idxDir();
+      const enc = encodeIdx(rows);
+      writeFileSync(join(d, `rows-${gen}.jsonl`), enc.rows);
+      writeFileSync(join(d, `meta-${gen}.u32`), enc.meta);
+      writeFileSync(join(d, `emb-${gen}.f64`), enc.emb);
+      writeHead({
+        v: IDX_V,
+        gen,
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+        tail: tailHash(path, st.size),
+        rows: rows.length,
+        rowsBytes: Buffer.byteLength(enc.rows),
+        embBytes: enc.emb.length,
+      });
+      // Drop older generations so text removed from turns.jsonl is gone from disk too.
+      for (const f of readdirSync(d)) if (/^(rows|meta|emb)-/.test(f) && !f.includes(gen)) rmSync(join(d, f), { force: true });
+    }
+    return rows;
+  } finally {
+    unlock?.();
+  }
 }
 
 export function appendTurn(t: MemTurn): void {
@@ -115,6 +371,8 @@ export function appendTurn(t: MemTurn): void {
 
 export function clearMemory(): void {
   if (existsSync(memPath())) rmSync(memPath());
+  // The read index holds copies of every row, so a real forget removes it too.
+  rmSync(idxDir(), { recursive: true, force: true });
   // Also remove the distilled facts file so stats, the facts view, and fact
   // dedup all stay consistent. Leaving facts.md behind would keep showing old
   // facts and would silently block those same facts from being re-stored.
@@ -367,7 +625,7 @@ export function globalStats(): GlobalStats {
 
 // ---- recall ----
 
-function cosine(a: number[], b: number[]): number {
+function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
   let dot = 0;
   let na = 0;
   let nb = 0;
@@ -532,23 +790,55 @@ const envNum = (name: string, dflt: number): number => {
   return Number.isFinite(v) && v > 0 ? v : dflt;
 };
 
-function bm25Scores(query: Set<string>, docs: string[]): number[] {
-  const toks = docs.map((d) => (d || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
-  const N = toks.length || 1;
-  const avg = toks.reduce((a, t) => a + t.length, 0) / N || 1;
-  const df = new Map<string, number>();
-  for (const t of toks) for (const w of new Set(t)) if (query.has(w)) df.set(w, (df.get(w) || 0) + 1);
-  const k1 = 1.2;
-  const b = 0.75;
-  return toks.map((t) => {
-    if (!t.length) return 0;
+const isTokenChar = (c: number): boolean => (c >= 97 && c <= 122) || (c >= 48 && c <= 57);
+
+/**
+ * Query-word counts for one lowercased row, without tokenising it. A token is a
+ * maximal [a-z0-9] run, so w is a token exactly where it sits between non-token
+ * characters. Entries come back in first-occurrence order, as tokenising gives.
+ */
+function queryCounts(lc: string, words: string[]): Map<string, number> {
+  const found: Array<[string, number, number]> = [];
+  for (const w of words) {
+    let count = 0;
+    let first = -1;
+    for (let p = lc.indexOf(w); p !== -1; p = lc.indexOf(w, p + 1)) {
+      const end = p + w.length;
+      if ((p === 0 || !isTokenChar(lc.charCodeAt(p - 1))) && (end === lc.length || !isTokenChar(lc.charCodeAt(end)))) {
+        if (first < 0) first = p;
+        count++;
+      }
+    }
+    if (count) found.push([w, count, first]);
+  }
+  return new Map(found.sort((a, b) => a[2] - b[2]).map(([w, c]) => [w, c]));
+}
+
+function bm25Scores(query: Set<string>, docs: string[], lens: Array<number | undefined> = []): number[] {
+  // Rows whose token count is known (from the read index) are counted with
+  // string search; the rest are tokenised. Both give the same lengths and counts.
+  const words = [...query];
+  const rows = docs.map((d, i) => {
+    const n = lens[i];
+    if (n !== undefined) return { n, tf: n ? queryCounts((d || '').toLowerCase(), words) : new Map<string, number>() };
+    const t = bm25Tokens(d);
     const tf = new Map<string, number>();
     for (const w of t) if (query.has(w)) tf.set(w, (tf.get(w) || 0) + 1);
+    return { n: t.length, tf };
+  });
+  const N = rows.length || 1;
+  const avg = rows.reduce((a, r) => a + r.n, 0) / N || 1;
+  const df = new Map<string, number>();
+  for (const r of rows) for (const w of r.tf.keys()) df.set(w, (df.get(w) || 0) + 1);
+  const k1 = 1.2;
+  const b = 0.75;
+  return rows.map(({ n: len, tf }) => {
+    if (!len) return 0;
     let s = 0;
     for (const [w, f] of tf) {
       const n = df.get(w) || 0;
       const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
-      s += (idf * f * (k1 + 1)) / (f + k1 * (1 - b + (b * t.length) / avg));
+      s += (idf * f * (k1 + 1)) / (f + k1 * (1 - b + (b * len) / avg));
     }
     return s;
   });
@@ -593,13 +883,18 @@ export async function recallContext(
 
   const qEmb = await embed(query);
   const qTok = tokens(query);
-  const bm = bm25Scores(qTok, pastIdx.map((i) => at(i).content));
+  const bm = bm25Scores(
+    qTok,
+    pastIdx.map((i) => at(i).content),
+    pastIdx.map((i) => rowTokens.get(at(i))),
+  );
   const bmMax = Math.max(0, ...bm) || 1;
 
   const scored: Array<{ i: number; s: number }> = [];
   pastIdx.forEach((i, j) => {
     const t = at(i);
-    const cos = qEmb && Array.isArray(t.emb) ? cosine(qEmb, t.emb) : 0;
+    const vec = rowVec.get(t) ?? (Array.isArray(t.emb) ? t.emb : null);
+    const cos = qEmb && vec ? cosine(qEmb, vec) : 0;
     const kw = (bm[j] ?? 0) / bmMax;
     // Embeddings carry most of the weight when present; keywords rescue exact
     // names, numbers and rare terms that embeddings blur.
