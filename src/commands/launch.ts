@@ -158,6 +158,7 @@ export const HOLT_IDENTITY =
  *   claude  -> `claude`         (interactive is the default; NO -p)
  *   codex   -> `codex`          (interactive; NOT `codex exec`)
  *   gemini  -> `gemini`         (interactive; NOT `-p`)
+ *   agy     -> `agy`            (interactive is the default; NO -p)
  */
 const INTERACTIVE_ARGS: Record<BrainId, string[]> = {
   claude: [],
