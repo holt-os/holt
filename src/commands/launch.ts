@@ -194,7 +194,7 @@ function brandingFlags(id: BrainId): string[] {
 }
 
 /**
- * For brains without a system-prompt flag (codex/gemini), write a managed
+ * For brains without a system-prompt flag (codex/gemini/agy), write a managed
  * project context file the brain reads on startup. Non-destructive: only writes
  * when the file does not exist, or exists but is already the Holt-managed one.
  * Never throws. Returns the path written, or null.
