@@ -163,6 +163,7 @@ const INTERACTIVE_ARGS: Record<BrainId, string[]> = {
   claude: [],
   codex: [],
   gemini: [],
+  agy: [],
 };
 
 /**
@@ -200,6 +201,7 @@ function brandingFlags(id: BrainId): string[] {
 const CONTEXT_FILE: Partial<Record<BrainId, string>> = {
   codex: 'AGENTS.md',
   gemini: 'GEMINI.md',
+  agy: 'AGENTS.md',
 };
 const CONTEXT_MARKER = '<!-- holt-managed identity -->';
 
