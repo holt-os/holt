@@ -80,7 +80,7 @@ Housekeeping:
 
 Holt runs in the folder you launch it from and asks to trust it first.
 A "brain" is the AI doing the thinking: an agent CLI on your machine
-(claude, codex, gemini) or a direct API connection you add in settings.
+(claude, codex, gemini, agy) or a direct API connection you add in settings.
 
 Docs: https://productsdecoded.com/holt
 Repo: https://github.com/holt-os/holt

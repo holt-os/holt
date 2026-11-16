@@ -97,7 +97,10 @@ export const BRAIN_SETUP: Record<BrainId, { install: string[]; login: string[] }
   claude: { install: ['npm', 'install', '-g', '@anthropic-ai/claude-code'], login: ['claude'] },
   codex: { install: ['npm', 'install', '-g', '@openai/codex'], login: ['codex', 'login'] },
   gemini: { install: ['npm', 'install', '-g', '@google/gemini-cli'], login: ['gemini'] },
-  agy: { install: ['agy', 'install'], login: ['agy'] },
+  // Antigravity ships a shell installer (not npm). It drops the binary in
+  // ~/.local/bin/agy and adds that dir to PATH for NEW shells; init.ts adds it
+  // to this process's PATH too so the sign-in step right after can find agy.
+  agy: { install: ['bash', '-c', 'curl -fsSL https://antigravity.google/cli/install.sh | bash'], login: ['agy'] },
 };
 
 /**

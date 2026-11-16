@@ -17,6 +17,10 @@
  *     from {description, prompt}. Prompt-only fidelity.
  *   - codex: BEST-EFFORT. A markdown custom-prompt file is generated from the
  *     same fields. Prompt-only fidelity.
+ *   - agy (Antigravity CLI): FULL power. Antigravity reads agentskills.io
+ *     SKILL.md folders from the workspace <ws>/.agents/skills/, so the skill
+ *     folder is copied verbatim, exactly like claude.
+ *     (antigravity.google/docs/cli, "Skills" + Gemini CLI migration table.)
  *
  * Empirically verified formats (checked against official docs, July 2026):
  *   - Gemini custom commands: project dir <ws>/.gemini/commands/, TOML files,
@@ -264,6 +268,10 @@ function renderCodexPrompt(src: SkillSource): string | null {
 function claudeSkillsDir(ws: string): string {
   return join(ws, '.claude', 'skills');
 }
+/** Antigravity CLI: the workspace skills dir agy reads on startup. */
+function agySkillsDir(ws: string): string {
+  return join(ws, '.agents', 'skills');
+}
 /** Gemini: the project commands dir. */
 function geminiCommandsDir(ws: string): string {
   return join(ws, '.gemini', 'commands');
@@ -331,7 +339,9 @@ export function compileForBrain(brain: BrainId, ws: string = workspace()): Compi
   for (const skill of skills) {
     try {
       if (brain === 'claude') {
-        compileClaude(skill, ws, manifest, res, nextEntries);
+        compileSkillFolder('claude', claudeSkillsDir(ws), skill, manifest, res, nextEntries);
+      } else if (brain === 'agy') {
+        compileSkillFolder('agy', agySkillsDir(ws), skill, manifest, res, nextEntries);
       } else if (brain === 'gemini') {
         compileGemini(skill, ws, manifest, res, nextEntries);
       } else {
@@ -360,16 +370,20 @@ export function compileForBrain(brain: BrainId, ws: string = workspace()): Compi
   return res;
 }
 
-/** Claude adapter: copy the whole skill folder verbatim into project skills. */
-function compileClaude(
+/**
+ * Folder adapter (claude, agy): copy the whole skill folder verbatim into the
+ * brain's skills dir. Both read agentskills.io SKILL.md folders natively.
+ */
+function compileSkillFolder(
+  brain: BrainId,
+  skillsDir: string,
   skill: Skill,
-  ws: string,
   manifest: Manifest,
   res: CompileResult,
   next: ManifestEntry[],
 ): void {
-  const dest = join(claudeSkillsDir(ws), skill.name);
-  const known = priorEntry(manifest, 'claude', dest);
+  const dest = join(skillsDir, skill.name);
+  const known = priorEntry(manifest, brain, dest);
 
   if (existsSync(dest) && !known) {
     // A skill folder we did not write already lives here: never clobber it.

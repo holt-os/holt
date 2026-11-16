@@ -60,6 +60,7 @@ const {
   compileForBrain,
   removeSkillArtifacts,
 } = await import('../src/skillcompiler.ts');
+const { BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP } = await import('../src/config.ts');
 
 // ---------------------------------------------------------------------------
 
@@ -74,6 +75,29 @@ check('claude: skill folder is copied verbatim (multi-file preserved)', () => {
   assert.ok(existsSync(join(dest, 'ref', 'notes.md')), 'multi-file preserved');
   assert.equal(readFileSync(join(dest, 'ref', 'notes.md'), 'utf8'), 'reference material');
   assert.ok(res.written.includes(dest), 'reported as written');
+});
+
+check('agy: skill folder is copied verbatim into .agents/skills, never ~/.codex', () => {
+  const { ws, home } = freshEnv();
+  makeSkill(ws, 'demo', 'A demo skill.', '# demo\nDo the thing.', {
+    'ref/notes.md': 'reference material',
+  });
+  const res = compileForBrain('agy', ws);
+  const dest = join(ws, '.agents', 'skills', 'demo');
+  assert.ok(existsSync(join(dest, 'SKILL.md')), 'SKILL.md copied');
+  assert.equal(readFileSync(join(dest, 'ref', 'notes.md'), 'utf8'), 'reference material');
+  assert.ok(res.written.includes(dest), 'reported as written');
+  assert.ok(!existsSync(join(home, '.codex')), 'codex dir untouched');
+});
+
+check('every brain id has an entry in each per-brain table', () => {
+  for (const id of BRAIN_IDS) {
+    assert.ok(BRAIN_DEFS[id], `BRAIN_DEFS.${id}`);
+    assert.ok(BRAIN_SETUP[id]?.install.length, `BRAIN_SETUP.${id}.install`);
+    assert.ok(BRAIN_SETUP[id]?.login.length, `BRAIN_SETUP.${id}.login`);
+    // A brain must not install itself with its own (not yet present) binary.
+    assert.notEqual(BRAIN_SETUP[id].install[0], BRAIN_DEFS[id].command, `${id} install is not self-referential`);
+  }
 });
 
 check('gemini: emits TOML with description + prompt + {{args}}', () => {

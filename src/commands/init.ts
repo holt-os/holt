@@ -1,4 +1,7 @@
 import { loadConfig, saveConfig, defaultConfig, BRAIN_IDS, BRAIN_DEFS, BRAIN_SETUP, loginUnavailable, cliBrainUsable, type BrainId, type ApiBrain } from '../config';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, delimiter } from 'node:path';
 import { isInstalled } from '../brains';
 import { installAlias } from '../alias';
 import { runInteractive } from '../install';
@@ -122,6 +125,14 @@ export async function init(): Promise<void> {
     console.log('\n' + c.accent(`Installing ${BRAIN_DEFS[id].label}`) + c.dim(`  (${s.install.join(' ')})`));
     const code = await runInteractive(s.install[0] as string, s.install.slice(1));
     console.log(code === 0 ? c.green(`  ${BRAIN_DEFS[id].label} installed.`) : c.red(`  Install failed (exit ${code}). Run manually: ${s.install.join(' ')}`));
+  }
+
+  // Shell installers (agy) put binaries in ~/.local/bin and only fix PATH for
+  // new shells. Expose it to this process so the sign-in below can find them.
+  const localBin = join(homedir(), '.local', 'bin');
+  const pathNow = process.env.PATH ?? '';
+  if (existsSync(localBin) && !pathNow.split(delimiter).includes(localBin)) {
+    process.env.PATH = pathNow ? `${localBin}${delimiter}${pathNow}` : localBin;
   }
 
   // Hand off to each tool's own sign-in.

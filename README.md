@@ -19,7 +19,7 @@
 
 ### Highlights
 
-- **Any brain, one assistant.** Bare `holt` launches a real interactive brain (Claude Code, Codex, or Gemini) branded as Holt, or you connect a direct API brain with your own key. Switch mid-conversation and keep the full context.
+- **Any brain, one assistant.** Bare `holt` launches a real interactive brain (Claude Code, Codex, Gemini, or Antigravity) branded as Holt, or you connect a direct API brain with your own key. Switch mid-conversation and keep the full context.
 - **Private memory you can see.** Per-folder semantic recall and distilled facts, an interactive knowledge graph (`holt graph`), and a self-maintaining wiki (`holt wiki`) over everything you tell it. Nothing leaves your machine.
 - **Ambient by default.** `holt hook` wires memory into Claude Code so it recalls and remembers with no manual step, and an MCP server exposes the same memory to Cursor and Codex.
 - **Runs your work.** Run a task once, on a schedule, or as a named routine, and reach it from your phone over Telegram. Real OS timers on macOS, Linux, and Windows.
@@ -66,7 +66,7 @@ cd ~/where-you-want-to-work
 holt           # start your assistant (or use your custom command, e.g. `ai`)
 ```
 
-That is it. Bare `holt` sets the folder up the first time (trust, brain, memory hooks) and then launches the **real interactive brain** (Claude Code, Codex, or Gemini), branded as Holt. Run `holt help` for the full command list.
+That is it. Bare `holt` sets the folder up the first time (trust, brain, memory hooks) and then launches the **real interactive brain** (Claude Code, Codex, Gemini, or Antigravity), branded as Holt. Run `holt help` for the full command list.
 
 Prefer to step through setup on its own first? `holt init` still does that, then `holt` starts the session.
 
@@ -83,9 +83,9 @@ An empty Holt gives generic answers, which is the usual reason people install it
 `holt` (with no command) is the front door: **your assistant, with memory of you.**
 
 1. **Sets up if needed.** In a fresh folder it runs onboarding (trust, pick a brain, memory). In an already-configured folder it just makes sure the folder is trusted, the memory directory exists, and the [ambient memory hooks](#ambient-memory-for-claude-code-holt-hook) are installed.
-> **Gemini note.** Personal Google accounts can no longer sign in to Gemini CLI (Google retired that login on 18 June 2026 in favour of Antigravity). Gemini still works in Holt with an API key from <https://aistudio.google.com/apikey>; `holt login gemini` walks you through connecting it.
+> **Gemini note.** Personal Google accounts can no longer sign in to Gemini CLI (Google retired that login on 18 June 2026 in favour of Antigravity). Gemini still works in Holt with an API key from <https://aistudio.google.com/apikey>; `holt login gemini` walks you through connecting it. Or pick the `agy` brain (Antigravity CLI), which signs in with a personal Google account.
 
-2. **Launches the real interactive brain.** It hands the terminal to the brain's own interactive session (`claude`, `codex`, or `gemini` with no `-p` and no prompt), so you keep the brain's full power: agentic edits, tool use, the permission UI, MCP. That is different from Holt's own built-in REPL, which shells out to the brain once per turn and is used for API brains that have no TUI of their own.
+2. **Launches the real interactive brain.** It hands the terminal to the brain's own interactive session (`claude`, `codex`, `gemini`, or `agy` with no `-p` and no prompt), so you keep the brain's full power: agentic edits, tool use, the permission UI, MCP. That is different from Holt's own built-in REPL, which shells out to the brain once per turn and is used for API brains that have no TUI of their own.
 3. **Brands the session as Holt.** See [Branding](#branding-holt-forward) below.
 
 If your default brain is a **direct API brain** (no interactive TUI of its own), bare `holt` opens Holt's own built-in REPL instead, branded the same way. Same command, same intro, no second thing to learn.
@@ -93,7 +93,7 @@ If your default brain is a **direct API brain** (no interactive TUI of its own),
 ### Branding (Holt-forward)
 
 - **Banner.** Holt prints its banner before the brain takes over.
-- **Identity.** Holt injects a short "you are Holt" system prompt so the session presents as your assistant, not the underlying model. For **Claude Code** this uses `--append-system-prompt=<text>` (confirmed to exist and work in interactive mode). Codex and Gemini have no such flag, so Holt writes the identity into a managed project context file the brain reads on startup (`AGENTS.md` for Codex, `GEMINI.md` for Gemini), and never clobbers a file you already have. The identity text lives in one place: `HOLT_IDENTITY` in `src/commands/launch.ts`.
+- **Identity.** Holt injects a short "you are Holt" system prompt so the session presents as your assistant, not the underlying model. For **Claude Code** this uses `--append-system-prompt=<text>` (confirmed to exist and work in interactive mode). Codex, Gemini and Antigravity have no such flag, so Holt writes the identity into a managed project context file the brain reads on startup (`AGENTS.md` for Codex and Antigravity, `GEMINI.md` for Gemini), and never clobbers a file you already have. The identity text lives in one place: `HOLT_IDENTITY` in `src/commands/launch.ts`.
 - **Status line.** For Claude Code, Holt sets the status line to `Holt` by merging a minimal `statusLine` into the **project** file `./.claude/settings.json` (never your global `~/.claude/settings.json`), non-destructively and with a backup, and only if you have not set one yourself.
 - **Residual chrome.** Claude Code has no flag to suppress its own welcome banner, so that (and any brain-specific chrome) still shows. Holt brands what it can and accepts the rest.
 
@@ -115,7 +115,7 @@ Trusted folders are remembered in `~/.holt/trust.json`. Everything Holt writes f
 During `holt init` you:
 
 1. **Trust the folder.**
-2. **Choose brains** (claude, codex, gemini). Holt installs any you pick that are missing.
+2. **Choose brains** (claude, codex, gemini, agy). Holt installs any you pick that are missing.
 3. **Sign in.** For a newly installed brain, Holt starts that tool's own login (browser or its own prompt). Holt never stores your credentials.
 4. **Pick a default** brain and, optionally, a **launch command**: a short word like `ai` that starts `holt` (your assistant). Holt installs it as a tiny launcher next to its own binary, so it works immediately in the same terminal, no sourcing or restart needed.
 5. **Enable semantic memory.** If you say yes, Holt sets up a local [Ollama](https://ollama.com) with a small embed model so recall works by meaning, fully offline.
@@ -225,6 +225,7 @@ A brain is an agent CLI installed and logged in on your machine. No API keys to 
 | Claude Code | `claude` | `npm i -g @anthropic-ai/claude-code` |
 | Codex | `codex` | `npm i -g @openai/codex` |
 | Gemini CLI | `gemini` | `npm i -g @google/gemini-cli` |
+| Antigravity CLI | `agy` | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
 
 `holt init` runs these for you when you pick a brain that is missing. You can also sign in any time with `holt login <brain>`.
 
@@ -327,6 +328,7 @@ When you `holt launch` an interactive brain, every enabled skill is also compile
 Fidelity depends on the brain:
 
 - **Claude Code (full power):** each skill folder is copied verbatim into the project's `.claude/skills/<name>/`, so multi-file skills, tool restrictions, and frontmatter are preserved one to one.
+- **Antigravity CLI (full power):** each skill folder is copied verbatim into the project's `.agents/skills/<name>/`, which Antigravity reads natively, same fidelity as Claude Code.
 - **Gemini CLI (best effort):** a `.gemini/commands/<name>.toml` custom command is generated from the skill's description and instructions, with your input passed through Gemini's `{{args}}`. Prompt only.
 - **Codex (best effort):** a markdown custom prompt is written to Codex's global prompts dir (`~/.codex/prompts/holt-<name>.md`, prefixed because Codex prompts are global rather than per project), with your input passed through Codex's `$ARGUMENTS`. Prompt only.
 
@@ -536,7 +538,7 @@ holt doctor
 It reports, section by section:
 
 - **Machine**: platform, CPU, RAM (total and free), and Node version.
-- **Brains**: which agent CLIs (`claude`, `codex`, `gemini`) are installed, plus a recommendation (prefer an installed CLI brain; otherwise install one or add an API brain).
+- **Brains**: which agent CLIs (`claude`, `codex`, `gemini`, `agy`) are installed, plus a recommendation (prefer an installed CLI brain; otherwise install one or add an API brain).
 - **Semantic memory**: whether a local Ollama with the embed model is reachable, and how to enable it (`ollama pull nomic-embed-text`) so recall is semantic and fully private.
 - **Knowledge wiki maintainer**: `brain` (the default, best quality, rides your existing plan) versus a local model sized to your RAM. On a 16 GB machine it names `qwen2.5:7b`; more RAM gets a larger model; under 16 GB it steers you to `brain`.
 - **Always-on / Telegram**: whether a Telegram bot is set up, and a note on hosting the bot on a low-power always-on machine while keeping heavy local models on a bigger one.
@@ -602,7 +604,7 @@ With no profile yet, `holt write` still works using a plain, natural voice.
 
 ```
 holt                 start your assistant: set up if needed, then launch the real
-                     interactive brain (Claude Code/Codex/Gemini), branded as Holt
+                     interactive brain (Claude Code/Codex/Gemini/Antigravity), branded as Holt
 holt launch          same as bare "holt"
 holt init            set up (trust, brains, sign-in, defaults) for this folder
 holt run <task>      run one task non-interactively (recall, brain, remember)
@@ -627,7 +629,7 @@ holt skill           manage skills: list | show | create | add | remove
 holt memory          inspect memory: holt memory [add <fact> | search <query> | facts | embed | clear]
 holt wiki            derived knowledge wiki: holt wiki [sync | auto | rebuild | lint | list | show | status]
 holt setting         configure brains, API brains, and launch command
-holt login <brain>   sign in to claude, codex, or gemini
+holt login <brain>   sign in to claude, codex, gemini, or agy
 holt version         print version
 holt help            show help
 ```
