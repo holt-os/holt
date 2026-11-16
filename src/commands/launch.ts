@@ -158,11 +158,13 @@ export const HOLT_IDENTITY =
  *   claude  -> `claude`         (interactive is the default; NO -p)
  *   codex   -> `codex`          (interactive; NOT `codex exec`)
  *   gemini  -> `gemini`         (interactive; NOT `-p`)
+ *   agy     -> `agy`            (interactive is the default; NO -p)
  */
 const INTERACTIVE_ARGS: Record<BrainId, string[]> = {
   claude: [],
   codex: [],
   gemini: [],
+  agy: [],
 };
 
 /**
@@ -192,7 +194,7 @@ function brandingFlags(id: BrainId): string[] {
 }
 
 /**
- * For brains without a system-prompt flag (codex/gemini), write a managed
+ * For brains without a system-prompt flag (codex/gemini/agy), write a managed
  * project context file the brain reads on startup. Non-destructive: only writes
  * when the file does not exist, or exists but is already the Holt-managed one.
  * Never throws. Returns the path written, or null.
@@ -200,6 +202,7 @@ function brandingFlags(id: BrainId): string[] {
 const CONTEXT_FILE: Partial<Record<BrainId, string>> = {
   codex: 'AGENTS.md',
   gemini: 'GEMINI.md',
+  agy: 'AGENTS.md',
 };
 const CONTEXT_MARKER = '<!-- holt-managed identity -->';
 

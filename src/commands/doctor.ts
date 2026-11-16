@@ -155,7 +155,7 @@ export async function doctor(args: string[] = []): Promise<void> {
   } else if (apiBrains.length) {
     good('Recommendation: no CLI brain installed, but you have an API brain configured. That works.');
   } else {
-    warn('Recommendation: no brain available. Install one CLI brain (claude, codex, or gemini) or add an API brain.');
+    warn(`Recommendation: no brain available. Install one CLI brain (${BRAIN_IDS.join(', ')}) or add an API brain.`);
     steps.push('Install a brain: run "holt init" (or add an API brain in "holt setting").');
   }
 

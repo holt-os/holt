@@ -560,6 +560,7 @@ const BRAIN_LABEL: Record<BrainId, string> = {
   claude: 'Claude Code',
   gemini: 'Gemini CLI',
   codex: 'Codex',
+  agy: 'Antigravity',
 };
 
 /**

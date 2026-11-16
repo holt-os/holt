@@ -39,7 +39,7 @@ export async function init(): Promise<void> {
   console.log('');
 
   const chosen = parseBrains(
-    (await ask('Which brains do you want? claude, codex, gemini (comma-separated, or "all"): ')) ?? '',
+    (await ask(`Which brains do you want? ${BRAIN_IDS.join(', ')} (comma-separated, or "all"): `)) ?? '',
     found,
   );
   console.log(c.dim(`  using: ${chosen.join(', ')}`));

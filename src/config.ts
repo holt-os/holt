@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { wsConfigPath, ensureWsDir, GLOBAL_DIR } from './workspace';
 import { c, isQuietMode } from './ui';
 
-export type BrainId = 'claude' | 'codex' | 'gemini';
+export type BrainId = 'claude' | 'codex' | 'gemini' | 'agy';
 export type Provider = 'anthropic' | 'openai' | 'gemini' | 'kimi' | 'grok';
 
 /**
@@ -89,6 +89,7 @@ export const BRAIN_DEFS: Record<BrainId, { label: string; command: string; args:
   // are not git repositories, which is nearly every non-developer folder.
   codex: { label: 'Codex (OpenAI)', command: 'codex', args: ['exec', '--skip-git-repo-check'] },
   gemini: { label: 'Gemini CLI', command: 'gemini', args: ['-p'] },
+  agy: { label: 'Antigravity CLI', command: 'agy', args: ['-p'] },
 };
 
 // How to install and sign in to each brain. These evolve upstream; adjust as needed.
@@ -96,6 +97,7 @@ export const BRAIN_SETUP: Record<BrainId, { install: string[]; login: string[] }
   claude: { install: ['npm', 'install', '-g', '@anthropic-ai/claude-code'], login: ['claude'] },
   codex: { install: ['npm', 'install', '-g', '@openai/codex'], login: ['codex', 'login'] },
   gemini: { install: ['npm', 'install', '-g', '@google/gemini-cli'], login: ['gemini'] },
+  agy: { install: ['agy', 'install'], login: ['agy'] },
 };
 
 /**
@@ -127,7 +129,7 @@ export function loginUnavailable(id: BrainId): LoginUnavailable | null {
   return BRAIN_LOGIN_UNAVAILABLE[id] ?? null;
 }
 
-export const BRAIN_IDS: BrainId[] = ['claude', 'codex', 'gemini'];
+export const BRAIN_IDS: BrainId[] = ['claude', 'codex', 'gemini', 'agy'];
 
 export const PROVIDERS: Provider[] = ['anthropic', 'openai', 'gemini', 'kimi', 'grok'];
 
