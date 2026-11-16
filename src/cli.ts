@@ -46,7 +46,7 @@ Usage: holt <command>
 
 Start here:
   (no command)    Start your assistant: sets up if needed, then launches your
-                  brain (Claude Code, Codex, Gemini), branded as Holt
+                  brain (Claude Code, Codex, Gemini, Antigravity), branded as Holt
   tour            A 2-minute guided first run: ask, teach it one fact, watch it remember
   doctor          Health check for this machine
                   ("holt doctor --fix" also repairs the common problems for you)
@@ -68,7 +68,7 @@ From your phone, while you sleep:
 
 Housekeeping:
   setting         Change brains, API connections, and your launch word (per folder)
-  login <brain>   Sign in to a brain: claude or codex
+  login <brain>   Sign in to a brain: claude, codex, or agy
                   (Gemini has no sign-in left; it routes you to an API key)
   update          Get the latest Holt, in one word
   reset           Start this folder over (asks first; your own files are untouched)
